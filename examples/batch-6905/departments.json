@@ -1,0 +1,12 @@
+{
+  "departments": [
+    {
+      "code": "gen",
+      "id": "",
+      "name": "",
+      "wordpress_category_slug": "",
+      "wordpress_category_parent_slug": null,
+      "wordpress_tag_slug": ""
+    }
+  ]
+}

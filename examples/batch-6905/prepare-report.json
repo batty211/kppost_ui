@@ -1,0 +1,37 @@
+{
+  "source_root": "/Users/theb/devs/kppwppost/project_test_data/6905",
+  "output_root": "/Users/theb/devs/kppwppost/project_test_data/batch-6905",
+  "department_code": "inv",
+  "department_codes": [
+    "gen"
+  ],
+  "departments_file": "/Users/theb/devs/kppwppost/project_test_data/batch-6905/departments.json",
+  "departments_source": "template",
+  "departments_cache_file": "/Users/theb/devs/kppwppost/project_test_data/.kppost/departments.json",
+  "prepared": 1,
+  "skipped": [],
+  "posts": [
+    {
+      "source_folder": "260609-gen",
+      "txt": "260609.txt",
+      "post_stem": "2026-06-09-gen-post01",
+      "department_code": "gen",
+      "event_time": "00:00",
+      "subject_highlight": "none",
+      "copied_images": [
+        {
+          "source": "1.jpg",
+          "prepared": "2026-06-09-gen-post01-01.jpg"
+        },
+        {
+          "source": "2.jpg",
+          "prepared": "2026-06-09-gen-post01-02.jpg"
+        },
+        {
+          "source": "3.jpg",
+          "prepared": "2026-06-09-gen-post01-03.jpg"
+        }
+      ]
+    }
+  ]
+}
