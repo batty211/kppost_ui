@@ -16,3 +16,4 @@ backend/cli/kppwppost/__pycache__/
 .local-runtime/
 .pytest_cache/
 __pycache__/
+backend/cli/kppwppost/
