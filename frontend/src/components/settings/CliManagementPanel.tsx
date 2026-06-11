@@ -15,6 +15,8 @@ export function CliManagementPanel({
   onInstall,
   onUpdate,
 }: CliManagementPanelProps) {
+  const isCliBusy = cliStatus.status === 'installing' || cliStatus.status === 'updating';
+
   return (
     <div className="space-y-4 pt-4 border-t border-gray-800">
       <label className="text-sm font-semibold text-gray-300">CLI Management</label>
@@ -42,7 +44,8 @@ export function CliManagementPanel({
             {(cliStatus.status === 'not_installed' || cliStatus.status === 'error') && (
               <button
                 onClick={onInstall}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
+                disabled={isCliBusy}
+                className="bg-blue-600 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
               >
                 {cliStatus.status === 'error' ? 'Reinstall CLI' : 'Install CLI'}
               </button>
@@ -50,19 +53,27 @@ export function CliManagementPanel({
             {cliStatus.update_available && (
               <button
                 onClick={onUpdate}
-                className="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
+                disabled={isCliBusy}
+                className="bg-amber-500 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
               >
-                Update CLI
+                {cliStatus.status === 'updating' ? 'Updating CLI...' : 'Update CLI'}
               </button>
             )}
             <button
+              disabled={isCliBusy}
               onClick={() => onCheckUpdates(true)}
-              className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
+              className="bg-gray-800 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
             >
               Check Update
             </button>
           </div>
         </div>
+
+        {isCliBusy && (
+          <div className="rounded-lg border border-blue-900/40 bg-blue-950/20 px-3 py-2 text-xs text-blue-100">
+            {cliStatus.message || 'Working on the CLI update...'}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div className="bg-gray-900 rounded-lg border border-gray-800 p-3">

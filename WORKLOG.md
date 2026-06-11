@@ -87,11 +87,67 @@
 - เปลี่ยน default branch เป็น `main`
 - อัปเดต `.gitignore` ให้ครอบคลุม runtime, build output, cache และไฟล์ชั่วคราวที่เกี่ยวข้อง
 
+### Latest Changes
+
+- แก้ WordPress config ให้ใช้งานตรงกับ CLI runtime จริง:
+  - ใช้ `workspace/.env` เป็น source หลัก
+  - fallback อ่านจาก legacy CLI `.env`
+  - inject env เข้า subprocess ตอนรัน CLI เพื่อกันปัญหา `preflight/post` หา credentials ไม่เจอ
+- เพิ่ม backend tests สำหรับ WP config route และ CLI env injection:
+  - `backend/tests/test_wp_config_routes.py`
+  - `backend/tests/test_cli_manager.py`
+- เพิ่ม workflow status สำหรับ batch ใน backend:
+  - expose `has_batch_json`, `latest_generate_output`, `latest_post_report`
+  - ใช้เป็น source of truth สำหรับปุ่ม `Generate`, `Preflight`, `Post`
+- ปรับหน้า batch preview ให้มีสถานะ command รายปุ่ม:
+  - `Generate` แสดงสำเร็จเมื่อ command ผ่าน
+  - `Preflight` parse summary จาก stdout + JSON ที่ CLI คืนกลับ
+  - `Post` แสดง summary และ report path
+  - disable `Preflight`/`Post` จนกว่าจะมี `batch.json`
+- เพิ่ม flow `New Post` สำหรับ raw source:
+  - สร้างโฟลเดอร์ชื่อ `yymmddhhmm-department_code`
+  - สร้างไฟล์ `.txt` ชื่อเดียวกับโฟลเดอร์
+  - เปิด folder ใหม่ใน editor ทันทีหลังสร้างสำเร็จ
+- ย้าย raw folders list มาอยู่ใน block `Step 0 • Raws` ใต้ช่อง add folder
+- ปรับตำแหน่งปุ่ม `Prepare` ใน raw source workspace ให้อยู่ตาม flow ที่ใช้งานจริงและใกล้กับ `New Post`
+- ย้าย `departments.json` ออกจาก raw workspace ไปไว้หน้า `Settings`
+- เปลี่ยนแนวคิด `departments.json` ให้เป็นไฟล์เดียวระดับทั้ง workspace:
+  - ใช้ `Raws/.kppost/departments.json`
+  - `New Post` และ `Prepare` บังคับให้ตั้งค่าไฟล์นี้ก่อน
+  - หน้า `Settings` เป็นจุดเดียวสำหรับแก้ workspace departments
+- เพิ่ม migration ตอนเปลี่ยน workspace root:
+  - copy `Raws/.kppost/departments.json` จาก workspace เดิมไป workspace ใหม่ถ้าปลายทางยังไม่มี
+  - copy `workspace/.env` จาก workspace เดิมไป workspace ใหม่ถ้าปลายทางยังไม่มี
+  - ไม่ overwrite ของปลายทางที่มีอยู่แล้ว
+- เพิ่ม backend tests สำหรับ:
+  - raw post creation
+  - batch workflow metadata
+  - migration ของ workspace departments และ workspace `.env`
+
+- ปรับหน้า `Settings` ให้มีปุ่ม `Back to workspace` และออกจากหน้า settings อัตโนมัติเมื่อผู้ใช้เลือก item จาก sidebar
+- แก้ flow เปลี่ยน `workspace folder` ให้ refresh workspace ทันทีทั้งกรณี `Browse` และกรณีพิมพ์ path เองแล้วกด save
+- ล้าง selection/state ที่ยังอ้างถึง workspace เดิมหลังสลับ root path เพื่อไม่ให้หน้า editor ค้างกับ path เก่า
+- เพิ่ม migration ของ reusable `departments` template/cache ตอนเปลี่ยน workspace:
+  - copy เฉพาะ cache ที่อ้างจาก `prepare-report.json`
+  - ไม่แตะ batch เก่า
+  - ไม่ overwrite ไฟล์ปลายทางที่มีอยู่แล้ว
+  - ignore path นอก workspace
+- เพิ่ม backend tests สำหรับ departments template migration และ guard path ที่ไม่ปลอดภัย
+- ปรับ `CLI Management` ให้ปุ่ม `Update CLI` และ `Install CLI` มี feedback ชัดขึ้น:
+  - แสดงสถานะเริ่มทำงานทันที
+  - กันการกดซ้ำระหว่าง `installing/updating`
+  - แสดงข้อความสถานะระหว่างรัน
+  - แจ้งผลเมื่อเสร็จหรือเมื่อเกิด error
+- แก้ `Canva import` ให้หน้า batch preview refresh หลัง import สำเร็จ เพื่อให้เห็นข้อมูลใหม่ทันที
+- ปรับ refresh หลัง `Canva import` ไม่ให้รีเซ็ตการเลือกโพสต์เองระหว่างดู batch เพื่อไม่ให้หน้าดูเหมือนโดน reorder
+
 ## สิ่งที่ยังควรทำต่อ
 
 - แยก state/action ใน `frontend/src/App.tsx` ออกอีกถ้ายังโตเกินไป
 - ลดการใช้ `any` ใน component ที่เก่ากว่า
 - เพิ่ม smoke test ที่รันง่ายขึ้นสำหรับ backend routes หลัก
+- เพิ่มข้อความ feedback หลังเปลี่ยน workspace ว่า migrate `.env` และ workspace departments สำเร็จหรือถูก skip
+- พิจารณาทำ summary/status card ในหน้า Settings สำหรับ `workspace .env` และ `Raws/.kppost/departments.json`
 - เตรียม flow native packaging หลังจากทดสอบบนเครื่องจริงนิ่งแล้ว
 
 ## Process Notes

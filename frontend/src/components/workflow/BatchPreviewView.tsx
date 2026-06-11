@@ -22,7 +22,13 @@ import { DepartmentsEditor } from '../DepartmentsEditor';
 import { reorderBackendImages } from './helpers';
 import { SortableImage } from './SortableImage';
 import { WorkflowButton } from './WorkflowButton';
-import type { ImageItem, PreparedPost } from '../../types/app';
+import type { BatchWorkflowStatus, CommandRunState, ImageItem, PreparedPost } from '../../types/app';
+
+interface CommandSummary {
+  tone: 'success' | 'error';
+  title: string;
+  lines: string[];
+}
 
 interface BatchPreviewViewProps {
   batchName: string;
@@ -30,6 +36,10 @@ interface BatchPreviewViewProps {
   openCanvaExport: (batchPath: string) => void;
   openCanvaImport: (batchPath: string) => void;
   isLoading: boolean;
+  refreshSignal?: number;
+  workflowStatus?: BatchWorkflowStatus | null;
+  commandStates: Record<string, CommandRunState>;
+  commandSummaries: Partial<Record<string, CommandSummary>>;
 }
 
 export function BatchPreviewView({
@@ -38,6 +48,10 @@ export function BatchPreviewView({
   openCanvaExport,
   openCanvaImport,
   isLoading,
+  refreshSignal = 0,
+  workflowStatus,
+  commandStates,
+  commandSummaries,
 }: BatchPreviewViewProps) {
   const [posts, setPosts] = React.useState<PreparedPost[]>([]);
   const [selectedPostIndex, setSelectedPostIndex] = React.useState(0);
@@ -60,7 +74,11 @@ export function BatchPreviewView({
 
   React.useEffect(() => {
     void fetchPreview();
-  }, [fetchPreview]);
+  }, [fetchPreview, refreshSignal]);
+
+  React.useEffect(() => {
+    setSelectedPostIndex(0);
+  }, [batchName]);
 
   const handleMdChange = async (content: string) => {
     const post = posts[selectedPostIndex];
@@ -109,6 +127,29 @@ export function BatchPreviewView({
   };
 
   const currentPost = posts[selectedPostIndex];
+  const generateState = commandStates.generate ?? 'idle';
+  const preflightState = commandStates.preflight ?? 'idle';
+  const postState = commandStates.post ?? 'idle';
+  const preflightDisabled = !workflowStatus?.has_batch_json;
+  const postDisabled = !workflowStatus?.has_batch_json;
+
+  const renderSummary = (result: CommandSummary | undefined) => {
+    if (!result) return null;
+    const styles =
+      result.tone === 'success'
+        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+        : 'border-rose-500/20 bg-rose-500/10 text-rose-100';
+    return (
+      <div className={`rounded-2xl border px-4 py-3 text-sm ${styles}`}>
+        <div className="font-semibold">{result.title}</div>
+        <div className="mt-2 space-y-1 text-xs leading-relaxed text-white/80">
+          {result.lines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="h-full flex flex-col space-y-6">
@@ -134,13 +175,65 @@ export function BatchPreviewView({
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <WorkflowButton label="Export for Canva" onClick={() => openCanvaExport(batchName)} isLoading={isLoading} />
-          <WorkflowButton label="Import from Canva" onClick={() => openCanvaImport(batchName)} isLoading={isLoading} />
-          <WorkflowButton label="Generate" onClick={() => runCommand('generate', batchName)} isLoading={isLoading} />
-          <WorkflowButton label="Preflight" onClick={() => runCommand('preflight', batchName)} isLoading={isLoading} />
-          <WorkflowButton label="Post" onClick={() => runCommand('post', batchName)} variant="primary" isLoading={isLoading} />
+          <WorkflowButton label="Export for Canva" onClick={() => openCanvaExport(batchName)} disabled={isLoading} />
+          <WorkflowButton label="Import from Canva" onClick={() => openCanvaImport(batchName)} disabled={isLoading} />
+          <WorkflowButton
+            label="Generate"
+            successLabel="Generated"
+            runningLabel="Generating..."
+            onClick={() => runCommand('generate', batchName)}
+            state={generateState}
+          />
+          <WorkflowButton
+            label="Preflight"
+            successLabel="Preflight Complete"
+            runningLabel="Preflighting..."
+            onClick={() => runCommand('preflight', batchName)}
+            state={preflightState}
+            disabled={preflightDisabled}
+            disabledReason={preflightDisabled ? 'Generate before preflight.' : undefined}
+          />
+          <WorkflowButton
+            label="Post"
+            successLabel="Post Complete"
+            runningLabel="Posting..."
+            onClick={() => runCommand('post', batchName)}
+            variant="primary"
+            state={postState}
+            disabled={postDisabled}
+            disabledReason={postDisabled ? 'Generate before post.' : undefined}
+          />
         </div>
       </header>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-xs text-gray-300">
+          <div className="text-[10px] uppercase font-bold tracking-[0.25em] text-gray-500">Workflow Readiness</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className={`rounded-full px-3 py-1 ${workflowStatus?.has_batch_json ? 'bg-emerald-500/15 text-emerald-100' : 'bg-gray-800 text-gray-400'}`}>
+              {workflowStatus?.has_batch_json ? 'batch.json ready' : 'Generate required'}
+            </span>
+            {workflowStatus?.latest_generate_output ? (
+              <span className="rounded-full bg-blue-500/15 px-3 py-1 text-blue-100">
+                output: {workflowStatus.latest_generate_output.split('/').pop()}
+              </span>
+            ) : null}
+            {workflowStatus?.latest_post_report ? (
+              <span className="rounded-full bg-amber-500/15 px-3 py-1 text-amber-100">
+                report: {workflowStatus.latest_post_report.split('/').pop()}
+              </span>
+            ) : null}
+          </div>
+          {!workflowStatus?.has_batch_json ? (
+            <div className="mt-3 text-gray-400">ต้อง Generate ก่อน จึงจะใช้ Preflight และ Post ได้</div>
+          ) : null}
+        </div>
+        <div className="space-y-3">
+          {renderSummary(commandSummaries.generate)}
+          {renderSummary(commandSummaries.preflight)}
+          {renderSummary(commandSummaries.post)}
+        </div>
+      </div>
 
       {activeTab === 'posts' ? (
         <div className="flex-1 flex gap-8 min-h-0">

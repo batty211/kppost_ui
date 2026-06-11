@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 import { API_BASE } from './api';
-import type { CommandLog } from '../types/app';
+import type { CommandLog, RawPostCreateRequest } from '../types/app';
 
 export async function fetchConfig() {
   const res = await axios.get(`${API_BASE}/config`);
@@ -30,11 +30,13 @@ export async function fetchBatchDetails(name: string) {
 }
 
 export async function installCli() {
-  await axios.post(`${API_BASE}/cli/install`);
+  const res = await axios.post(`${API_BASE}/cli/install`);
+  return res.data;
 }
 
 export async function updateCli() {
-  await axios.post(`${API_BASE}/cli/update`);
+  const res = await axios.post(`${API_BASE}/cli/update`);
+  return res.data;
 }
 
 export async function renameBatch(batchName: string, newName: string) {
@@ -46,13 +48,29 @@ export async function createRawSource(folderName: string) {
   return res.data;
 }
 
+export async function fetchWorkspaceDepartments() {
+  const res = await axios.get(`${API_BASE}/workspace/departments`);
+  return res.data;
+}
+
+export async function saveWorkspaceDepartments(departments: unknown) {
+  const res = await axios.put(`${API_BASE}/workspace/departments`, departments);
+  return res.data;
+}
+
+export async function createRawPost(workspacePath: string, payload: RawPostCreateRequest) {
+  const res = await axios.post(`${API_BASE}/raws/${workspacePath}/posts`, payload);
+  return res.data;
+}
+
 export async function browseFolder() {
   const res = await axios.get(`${API_BASE}/browse`);
   return res.data;
 }
 
 export async function saveConfig(config: unknown) {
-  await axios.post(`${API_BASE}/config`, config);
+  const res = await axios.post(`${API_BASE}/config`, config);
+  return res.data;
 }
 
 export async function uploadBatchImage(batchName: string, file: File) {

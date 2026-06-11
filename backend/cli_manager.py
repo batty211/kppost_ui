@@ -35,6 +35,13 @@ CLI_RAW_PYPROJECT_MAIN = "https://raw.githubusercontent.com/batty211/kppwppost/m
 _STATE_LOCK = threading.Lock()
 _VERSION_RE = re.compile(r"^v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<suffix>.*)?$")
 logger = logging.getLogger("kppost_ui.cli")
+WP_ENV_KEYS = (
+    "WP_URL",
+    "WP_USERNAME",
+    "WP_APPLICATION_PASSWORD",
+    "WP_TIMEOUT_SECONDS",
+    "WP_VERIFY_SSL",
+)
 
 
 def _default_state() -> dict[str, Any]:
@@ -431,12 +438,14 @@ def run_cli_command(command: str, args: list[str], cwd: str) -> dict[str, Any]:
         raise FileNotFoundError("CLI is not installed.")
 
     cli_cmd = [os.fspath(cli_path), command, *args]
+    env = _build_cli_env(command, args, cwd)
     logger.info("Running CLI command: %s | cwd=%s", " ".join(cli_cmd), cwd)
     result = subprocess.run(
         cli_cmd,
         capture_output=True,
         text=True,
         cwd=cwd,
+        env=env,
     )
     logger.info(
         "CLI command finished: returncode=%s stderr=%s",
@@ -459,3 +468,47 @@ def get_cli_info(force_remote: bool = False) -> dict[str, Any]:
 def ensure_cli_workspace() -> None:
     get_app_data_dir().mkdir(parents=True, exist_ok=True)
     get_cli_source_dir().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _read_env_overrides(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key in WP_ENV_KEYS:
+                values[key] = value.strip()
+    return values
+
+
+def _resolve_batch_env_path(command: str, args: list[str], cwd: str) -> Path | None:
+    batch_arg: str | None = None
+    if command in {"generate", "validate", "preflight", "post"} and args:
+        batch_arg = args[0]
+    elif command == "canva" and len(args) >= 2 and args[0] in {"export", "import"}:
+        batch_arg = args[1]
+
+    if not batch_arg:
+        return None
+
+    batch_path = (Path(cwd) / batch_arg).resolve()
+    if not batch_path.exists() or not batch_path.is_dir():
+        return None
+    return batch_path / ".env"
+
+
+def _build_cli_env(command: str, args: list[str], cwd: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(_read_env_overrides(Path(cwd) / ".env"))
+
+    batch_env_path = _resolve_batch_env_path(command, args, cwd)
+    if batch_env_path is not None:
+        env.update(_read_env_overrides(batch_env_path))
+
+    return env

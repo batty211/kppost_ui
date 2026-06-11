@@ -41,10 +41,21 @@ export interface DepartmentsFile {
   departments: DepartmentEntry[];
 }
 
+export interface BatchWorkflowStatus {
+  has_batch_json: boolean;
+  has_bulkpost_state: boolean;
+  has_reports_dir: boolean;
+  latest_generate_output: string | null;
+  latest_post_report: string | null;
+  latest_preflight_report?: string | null;
+}
+
 export interface BatchDetails {
   name: string;
   content: string;
   images: ImageItem[];
+  workflow_status?: BatchWorkflowStatus | null;
+  workspace_departments?: DepartmentsFile | null;
   [key: string]: unknown;
 }
 
@@ -84,6 +95,14 @@ export interface CommandLog {
   cwd?: string;
   batch_path?: string;
   output_path?: string;
+}
+
+export type CommandRunState = 'idle' | 'running' | 'success' | 'error';
+
+export interface RawPostCreateRequest {
+  date: string;
+  time: string;
+  department_code: string;
 }
 
 export interface BrowseResult {

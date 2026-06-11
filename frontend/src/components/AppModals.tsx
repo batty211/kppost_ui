@@ -49,22 +49,110 @@ export function PreparationCompleteModal({
 
 interface NewPostModalProps {
   onClose: () => void;
+  rawSourceName: string;
+  selectedDate: string;
+  selectedTime: string;
+  departments: Array<{ code: string; name: string }>;
+  selectedDepartmentCode: string;
+  isSubmitting: boolean;
+  helperMessage?: string;
+  onDateChange: (value: string) => void;
+  onTimeChange: (value: string) => void;
+  onDepartmentChange: (value: string) => void;
+  onSubmit: () => void;
 }
 
-export function NewPostModal({ onClose }: NewPostModalProps) {
+export function NewPostModal({
+  onClose,
+  rawSourceName,
+  selectedDate,
+  selectedTime,
+  departments,
+  selectedDepartmentCode,
+  isSubmitting,
+  helperMessage,
+  onDateChange,
+  onTimeChange,
+  onDepartmentChange,
+  onSubmit,
+}: NewPostModalProps) {
+  const hasDepartments = departments.length > 0;
+
   return (
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
-        <h3 className="text-lg font-bold mb-3">New Post</h3>
+        <h3 className="text-lg font-bold mb-2">New Post</h3>
         <p className="text-sm text-gray-400 leading-relaxed mb-6">
-          The new-post flow is still wired through the batch preparation step. Use <span className="font-semibold text-gray-200">Prepare</span> to create a reviewable batch, then edit and publish from there.
+          Create a raw post folder inside <span className="font-semibold text-gray-200">{rawSourceName}</span>.
         </p>
-        <button
-          onClick={onClose}
-          className="w-full px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors"
-        >
-          Close
-        </button>
+        <div className="space-y-4">
+          <label className="block">
+            <div className="mb-2 text-xs font-bold uppercase text-gray-500">Date</div>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => onDateChange(event.target.value)}
+              className="w-full rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </label>
+          <label className="block">
+            <div className="mb-2 text-xs font-bold uppercase text-gray-500">Time</div>
+            <input
+              type="time"
+              value={selectedTime}
+              onChange={(event) => onTimeChange(event.target.value)}
+              className="w-full rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </label>
+          <label className="block">
+            <div className="mb-2 text-xs font-bold uppercase text-gray-500">Department</div>
+            {hasDepartments ? (
+              <select
+                value={selectedDepartmentCode}
+                onChange={(event) => onDepartmentChange(event.target.value)}
+                className="w-full rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="" disabled>
+                  Select department
+                </option>
+                {departments.map((department) => (
+                  <option key={department.code} value={department.code}>
+                    {department.name ? `${department.code} - ${department.name}` : department.code}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={selectedDepartmentCode}
+                onChange={(event) => onDepartmentChange(event.target.value)}
+                placeholder="department-code"
+                className="w-full rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            )}
+          </label>
+          {helperMessage ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-100">
+              {helperMessage}
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-8 flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-800 text-gray-400 font-bold hover:bg-gray-800 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSubmit}
+            disabled={isSubmitting || !selectedDate || !selectedTime || !selectedDepartmentCode}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors disabled:opacity-50"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Post'}
+          </button>
+        </div>
       </div>
     </div>
   );

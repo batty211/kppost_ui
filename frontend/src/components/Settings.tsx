@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon } from 'lucide-react';
-import axios from 'axios';
+import { ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
 
-import { API_BASE } from '../lib/api';
 import type { AppConfig, CliStatus } from '../types/app';
+import { DepartmentsEditor } from './DepartmentsEditor';
 import { CliManagementPanel } from './settings/CliManagementPanel';
 import { WordPressSettings } from './settings/WordPressSettings';
 
@@ -11,20 +10,28 @@ interface SettingsViewProps {
   config: AppConfig;
   fetchConfig: () => Promise<void>;
   handleBrowse: () => Promise<void>;
+  onClose: () => void;
+  onWorkspaceRootChange: () => void;
+  saveConfig: (config: AppConfig) => Promise<AppConfig>;
   cliStatus: CliStatus;
   setupCli: () => Promise<void>;
   updateCli: () => Promise<void>;
   checkCliInfo: (forceRemote?: boolean) => Promise<void>;
+  refreshWorkspaceContext?: () => Promise<void>;
 }
 
 export function SettingsView({
   config,
   fetchConfig,
   handleBrowse,
+  onClose,
+  onWorkspaceRootChange,
+  saveConfig,
   cliStatus,
   setupCli,
   updateCli,
   checkCliInfo,
+  refreshWorkspaceContext,
 }: SettingsViewProps) {
   const [localConfig, setLocalConfig] = useState(config);
 
@@ -34,8 +41,12 @@ export function SettingsView({
 
   const handleSave = async () => {
     try {
-      await axios.post(`${API_BASE}/config`, localConfig);
+      const rootPathChanged = localConfig.root_path !== config.root_path;
+      await saveConfig(localConfig);
       await fetchConfig();
+      if (rootPathChanged) {
+        onWorkspaceRootChange();
+      }
       alert('Settings saved!');
     } catch {
       alert('Error saving settings');
@@ -48,10 +59,17 @@ export function SettingsView({
         <div className="bg-gray-800 p-3 rounded-xl">
           <SettingsIcon size={24} className="text-gray-400" />
         </div>
-        <div>
+        <div className="flex-1">
           <h2 className="text-2xl font-bold">Settings</h2>
           <p className="text-gray-500 text-sm">Configure your workspace and CLI path.</p>
         </div>
+        <button
+          onClick={onClose}
+          className="inline-flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-900 px-4 py-2 text-sm font-semibold text-gray-200 transition-colors hover:border-gray-700 hover:bg-gray-800"
+        >
+          <ArrowLeft size={16} />
+          Back to workspace
+        </button>
       </div>
 
       <div className="space-y-8 bg-gray-900 border border-gray-800 p-8 rounded-2xl">
@@ -89,6 +107,24 @@ export function SettingsView({
         >
           Save Configuration
         </button>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-blue-900/40 bg-blue-950/20 px-4 py-3 text-sm text-blue-100">
+        WordPress credentials are app-wide and stay available when you switch workspace folders.
+      </div>
+
+      <div className="mt-6 space-y-4 rounded-2xl border border-gray-800 bg-gray-900 p-8">
+        <div>
+          <h3 className="text-lg font-bold text-gray-100">Workspace departments.json</h3>
+          <p className="mt-1 text-sm text-gray-400">
+            Manage department mappings once for the whole workspace. New Post and Prepare will use this shared file.
+          </p>
+        </div>
+        <DepartmentsEditor
+          workspaceLevel
+          title="Workspace departments.json"
+          onSaved={refreshWorkspaceContext}
+        />
       </div>
 
       <WordPressSettings />

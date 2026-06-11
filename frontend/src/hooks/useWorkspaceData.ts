@@ -69,6 +69,13 @@ export function useWorkspaceData() {
     return result.path;
   };
 
+  const persistConfig = async (nextConfig: AppConfig) => {
+    const savedConfig = await saveConfig(nextConfig) as AppConfig;
+    setConfig(savedConfig);
+    await refreshWorkspace();
+    return savedConfig;
+  };
+
   useEffect(() => {
     void refreshConfig();
     void refreshWorkspace();
@@ -82,6 +89,7 @@ export function useWorkspaceData() {
     refreshBatchDetails,
     refreshWorkspace,
     refreshConfig,
+    persistConfig,
     setBatchDetails,
     setConfig,
     workspace,

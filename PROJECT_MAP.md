@@ -23,14 +23,27 @@ steps without manually installing Python, Node, or the CLI repo.
 - CLI source is installed and updated inside the app data directory.
 - CLI executable path is stored in the app config after install/update.
 - Batch files still live in the user-selected workspace root.
+- WordPress credentials live in `workspace/.env`.
+- Workspace-wide department mapping lives in `Raws/.kppost/departments.json`.
 
 ## Key Flows
 
 1. Install CLI from GitHub.
 2. Check installed version against the latest upstream version.
 3. Update the vendored CLI source and reinstall it when a newer version exists.
-4. Use the CLI through the backend command bridge.
-5. Edit batches and prepare content in the UI, then run generate/preflight/post.
+4. Use the CLI through the backend command bridge, with workspace `.env` injected into subprocess runs.
+5. Configure workspace-wide departments in `Settings` before creating raw posts or preparing a batch.
+6. Create raw posts under `Raws/<source>/yymmddhhmm-department_code`.
+7. Edit batches and prepare content in the UI, then run generate/preflight/post.
+
+## Workspace Rules
+
+- `Preflight` and `Post` are only enabled after `Generate` creates `batch.json`.
+- `New Post` and `Prepare` depend on `Raws/.kppost/departments.json`.
+- When the workspace root changes, the app attempts to migrate:
+  - `workspace/.env`
+  - `Raws/.kppost/departments.json`
+  - cached reusable departments data referenced by `prepare-report.json`
 
 ## Generated / Local-Only Files
 

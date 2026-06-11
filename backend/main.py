@@ -75,6 +75,9 @@ if frontend_assets_dir.exists():
 
 WORKSPACE_ZONES = ("Raws", "Batches", "Canvas")
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+RAW_DEPARTMENTS_TEMPLATE = {
+    "departments": [],
+}
 
 
 def _natural_sort_key(value: str) -> list[tuple[int, object]]:
@@ -117,6 +120,112 @@ def _departments_cache_destination(root: Path, folder_path: Path) -> Path | None
     return cache_path
 
 
+def _departments_cache_sources(root: Path) -> list[tuple[Path, Path]]:
+    workspace_root = root.resolve()
+    cache_sources: list[tuple[Path, Path]] = []
+    seen_rel_paths: set[str] = set()
+
+    for report_path in workspace_root.rglob("prepare-report.json"):
+        folder_path = report_path.parent
+        cache_path = _departments_cache_destination(workspace_root, folder_path)
+        if cache_path is None or not cache_path.is_file():
+            continue
+
+        relative_path = cache_path.relative_to(workspace_root)
+        relative_key = relative_path.as_posix()
+        if relative_key in seen_rel_paths:
+            continue
+
+        seen_rel_paths.add(relative_key)
+        cache_sources.append((cache_path, relative_path))
+
+    return cache_sources
+
+
+def _migrate_departments_templates(previous_root: Path, next_root: Path) -> dict[str, object]:
+    previous_workspace = previous_root.resolve()
+    next_workspace = next_root.resolve()
+
+    if previous_workspace == next_workspace:
+        return {"status": "skipped_same_root", "copied": []}
+
+    copied: list[str] = []
+    skipped_existing: list[str] = []
+    source_rel_paths = _departments_cache_sources(previous_workspace)
+
+    if not source_rel_paths:
+        return {"status": "not_found", "copied": [], "skipped_existing": []}
+
+    for source_path, relative_path in source_rel_paths:
+        destination_path = (next_workspace / relative_path).resolve()
+        if next_workspace not in destination_path.parents:
+            continue
+        if destination_path.exists():
+            skipped_existing.append(relative_path.as_posix())
+            continue
+
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination_path)
+        copied.append(relative_path.as_posix())
+
+    if copied:
+        status = "copied"
+    elif skipped_existing:
+        status = "skipped_existing"
+    else:
+        status = "not_found"
+
+    return {
+        "status": status,
+        "copied": copied,
+        "skipped_existing": skipped_existing,
+    }
+
+
+def _migrate_workspace_env(previous_root: Path, next_root: Path) -> dict[str, object]:
+    previous_workspace = previous_root.resolve()
+    next_workspace = next_root.resolve()
+
+    if previous_workspace == next_workspace:
+        return {"status": "skipped_same_root", "copied": False, "skipped_existing": False}
+
+    source_path = get_wp_config_path(previous_workspace)
+    destination_path = get_wp_config_path(next_workspace)
+
+    if not source_path.is_file():
+        return {"status": "not_found", "copied": False, "skipped_existing": False}
+    if destination_path.exists():
+        return {"status": "skipped_existing", "copied": False, "skipped_existing": True}
+
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, destination_path)
+    return {"status": "copied", "copied": True, "skipped_existing": False}
+
+
+def _workspace_departments_path(root: Path) -> Path:
+    return root.resolve() / "Raws" / ".kppost" / "departments.json"
+
+
+def _migrate_workspace_departments(previous_root: Path, next_root: Path) -> dict[str, object]:
+    previous_workspace = previous_root.resolve()
+    next_workspace = next_root.resolve()
+
+    if previous_workspace == next_workspace:
+        return {"status": "skipped_same_root", "copied": False, "skipped_existing": False}
+
+    source_path = _workspace_departments_path(previous_workspace)
+    destination_path = _workspace_departments_path(next_workspace)
+
+    if not source_path.is_file():
+        return {"status": "not_found", "copied": False, "skipped_existing": False}
+    if destination_path.exists():
+        return {"status": "skipped_existing", "copied": False, "skipped_existing": True}
+
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, destination_path)
+    return {"status": "copied", "copied": True, "skipped_existing": False}
+
+
 def get_config():
     default_config = {
         "root_path": get_default_root_path(),
@@ -144,8 +253,58 @@ def save_config(config):
         json.dump(config, handle, indent=4, ensure_ascii=False)
     logger.info("Saved config: root_path=%s app_data_dir=%s", config.get("root_path"), config.get("app_data_dir"))
 
-def get_wp_config_path():
-    return get_cli_source_dir() / "kppwppost" / ".env"
+
+WP_CONFIG_KEYS = (
+    "WP_URL",
+    "WP_USERNAME",
+    "WP_APPLICATION_PASSWORD",
+    "WP_TIMEOUT_SECONDS",
+    "WP_VERIFY_SSL",
+)
+
+
+def get_wp_config_path(root: str | Path | None = None) -> Path:
+    if root is None:
+        config = get_config()
+        root = config["root_path"]
+    return Path(root).expanduser().resolve() / ".env"
+
+
+def get_legacy_wp_config_path() -> Path:
+    return get_cli_source_dir() / ".env"
+
+
+def _default_wp_config() -> dict[str, str]:
+    return {
+        "WP_URL": "",
+        "WP_USERNAME": "",
+        "WP_APPLICATION_PASSWORD": "",
+    }
+
+
+def _read_wp_env_file(path: Path) -> dict[str, str]:
+    config: dict[str, str] = {}
+    if not path.exists():
+        return config
+
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key in WP_CONFIG_KEYS:
+                config[key] = value.strip()
+    return config
+
+
+def _write_wp_env_file(path: Path, new_config: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for key in WP_CONFIG_KEYS:
+            if key in new_config:
+                handle.write(f"{key}={new_config[key]}\n")
 
 
 def ensure_workspace_layout(root: str | Path) -> Path:
@@ -252,6 +411,83 @@ def _openable_source_details(root: Path, folder: Path) -> dict[str, object] | No
     }
 
 
+def _read_json_file(path: Path) -> dict[str, object] | list[object] | None:
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, (dict, list)):
+        return data
+    return None
+
+
+def _latest_matching_file(folder: Path, pattern: str) -> Path | None:
+    if not folder.exists() or not folder.is_dir():
+        return None
+    matches = [path for path in folder.glob(pattern) if path.is_file()]
+    if not matches:
+        return None
+    return max(matches, key=lambda path: path.stat().st_mtime_ns)
+
+
+def _workflow_status_payload(root: Path, target: Path) -> dict[str, object]:
+    batch_json_path = target / "batch.json"
+    bulkpost_dir = target / ".bulkpost"
+    reports_dir = bulkpost_dir / "reports"
+    generated_preview_path = bulkpost_dir / "generated-preview.json"
+    generate_candidates = [path for path in (batch_json_path, generated_preview_path) if path.is_file()]
+    latest_generate_output = max(generate_candidates, key=lambda path: path.stat().st_mtime_ns) if generate_candidates else None
+    latest_post_report = _latest_matching_file(reports_dir, "import-*.json")
+    latest_preflight_report = _latest_matching_file(reports_dir, "preflight-*.json")
+
+    return {
+        "has_batch_json": batch_json_path.is_file(),
+        "has_bulkpost_state": (bulkpost_dir / "state.json").is_file(),
+        "has_reports_dir": reports_dir.is_dir(),
+        "latest_generate_output": _relative_workspace_path(root, latest_generate_output) if latest_generate_output is not None else None,
+        "latest_post_report": _relative_workspace_path(root, latest_post_report) if latest_post_report is not None else None,
+        "latest_preflight_report": _relative_workspace_path(root, latest_preflight_report) if latest_preflight_report is not None else None,
+    }
+
+
+def _workspace_departments_payload(root: Path) -> dict[str, object]:
+    return _read_departments_payload(_workspace_departments_path(root))
+
+
+def _read_departments_payload(path: Path) -> dict[str, object]:
+    data = _read_json_file(path)
+    if isinstance(data, dict) and isinstance(data.get("departments"), list):
+        return data
+    return dict(RAW_DEPARTMENTS_TEMPLATE)
+
+
+def _write_departments_payload(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+
+
+def _raw_department_item(department_code: str) -> dict[str, object]:
+    return {
+        "code": department_code,
+        "id": "",
+        "name": "",
+        "wordpress_category_slug": "",
+        "wordpress_category_parent_slug": None,
+        "wordpress_tag_slug": "",
+    }
+
+
+def _raw_post_folder_name(raw_date: str, raw_time: str, department_code: str) -> str:
+    compact_date = raw_date.replace("-", "")
+    compact_time = raw_time.replace(":", "")
+    return f"{compact_date[2:]}{compact_time}-{department_code}"
+
+
 def _workspace_zone_payload(root: Path, zone_name: str) -> dict[str, object]:
     zone_path = root / zone_name
     return {
@@ -280,26 +516,18 @@ def _legacy_workspace_items(root: Path) -> list[dict[str, object]]:
 
 @app.get("/config/wp")
 def read_wp_config():
-    path = get_wp_config_path()
-    if not path.exists():
-        return {"WP_URL": "", "WP_USERNAME": "", "WP_APPLICATION_PASSWORD": ""}
-    
-    config = {}
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if "=" in line:
-                key, value = line.strip().split("=", 1)
-                config[key] = value
-    return config
+    current_path = get_wp_config_path()
+    config = _read_wp_env_file(current_path)
+    if config:
+        return {**_default_wp_config(), **config}
+
+    legacy_config = _read_wp_env_file(get_legacy_wp_config_path())
+    return {**_default_wp_config(), **legacy_config}
 
 @app.post("/config/wp")
 def update_wp_config(new_config: dict):
     path = get_wp_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for key, value in new_config.items():
-            if key in ["WP_URL", "WP_USERNAME", "WP_APPLICATION_PASSWORD", "WP_TIMEOUT_SECONDS", "WP_VERIFY_SSL"]:
-                f.write(f"{key}={value}\n")
+    _write_wp_env_file(path, new_config)
     return {"message": "WP config updated"}
 
 @app.get("/files/{file_path:path}")
@@ -357,11 +585,26 @@ def read_config():
 @app.post("/config")
 def update_config(new_config: dict):
     config = get_config()
+    previous_root = ensure_workspace_layout(config["root_path"])
     config.update(new_config)
-    ensure_workspace_layout(config["root_path"])
+    next_root = ensure_workspace_layout(config["root_path"])
+    departments_migration = _migrate_departments_templates(previous_root, next_root)
+    workspace_departments_migration = _migrate_workspace_departments(previous_root, next_root)
+    wp_env_migration = _migrate_workspace_env(previous_root, next_root)
     save_config(config)
-    logger.info("Config updated from API: root_path=%s", config["root_path"])
-    return config
+    logger.info(
+        "Config updated from API: root_path=%s departments_migration=%s workspace_departments_migration=%s wp_env_migration=%s",
+        config["root_path"],
+        departments_migration["status"],
+        workspace_departments_migration["status"],
+        wp_env_migration["status"],
+    )
+    return {
+        **config,
+        "departments_template_migration": departments_migration,
+        "workspace_departments_migration": workspace_departments_migration,
+        "wp_env_migration": wp_env_migration,
+    }
 
 @app.get("/browse")
 def browse_folder():
@@ -424,12 +667,16 @@ def get_workspace_node(workspace_path: str):
         "openable": False,
         "content": "",
         "images": [],
+        "workflow_status": None,
+        "workspace_departments": _workspace_departments_payload(root),
     }
     details = _openable_source_details(root, target)
     if details is not None:
         node["openable"] = True
         node["content"] = details["content"]
         node["images"] = details["images"]
+    if node["path"].startswith("Batches/"):
+        node["workflow_status"] = _workflow_status_payload(root, target)
     return node
 
 class UpdatePostRequest(BaseModel):
@@ -511,6 +758,68 @@ def get_departments(workspace_path: str):
 
     with open(dept_file, "r") as f:
         return json.load(f)
+
+
+@app.get("/workspace/departments")
+def get_workspace_departments():
+    config = get_config()
+    root = ensure_workspace_layout(config["root_path"])
+    return _workspace_departments_payload(root)
+
+
+@app.put("/workspace/departments")
+def update_workspace_departments(data: dict):
+    config = get_config()
+    root = ensure_workspace_layout(config["root_path"])
+    if "departments" not in data or not isinstance(data["departments"], list):
+        raise HTTPException(status_code=400, detail="Invalid format")
+    path = _workspace_departments_path(root)
+    _write_departments_payload(path, data)
+    return {"message": "Updated"}
+
+
+@app.post("/raws/{workspace_path:path}/posts")
+def create_raw_post(workspace_path: str, req: dict):
+    config = get_config()
+    root = ensure_workspace_layout(config["root_path"])
+    source_root = _resolve_workspace_directory(root, workspace_path)
+    raw_date = str(req.get("date", "")).strip()
+    raw_time = str(req.get("time", "")).strip()
+    department_code = str(req.get("department_code", "")).strip()
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    if not re.fullmatch(r"\d{2}:\d{2}", raw_time):
+        raise HTTPException(status_code=400, detail="time must be HH:MM")
+    if not re.fullmatch(r"[a-z0-9]+", department_code):
+        raise HTTPException(status_code=400, detail="Invalid department code")
+
+    departments_path = _workspace_departments_path(root)
+    departments_payload = _read_departments_payload(departments_path)
+    departments = departments_payload.get("departments", [])
+    if not isinstance(departments, list):
+        departments = []
+
+    department_codes = {
+        item.get("code", "").strip()
+        for item in departments
+        if isinstance(item, dict) and isinstance(item.get("code"), str)
+    }
+    if department_code not in department_codes:
+        raise HTTPException(status_code=400, detail="Department code is not defined in workspace departments.json")
+
+    folder_name = _raw_post_folder_name(raw_date, raw_time, department_code)
+    folder_path = source_root / folder_name
+    if folder_path.exists():
+        raise HTTPException(status_code=400, detail="Raw post already exists")
+
+    folder_path.mkdir(parents=True, exist_ok=False)
+    text_path = folder_path / f"{folder_name}.txt"
+    text_path.write_text("", encoding="utf-8")
+    return {
+        "name": folder_name,
+        "path": _relative_workspace_path(root, folder_path),
+    }
 
 @app.put("/batches/{workspace_path:path}/departments")
 def update_departments(workspace_path: str, data: dict):

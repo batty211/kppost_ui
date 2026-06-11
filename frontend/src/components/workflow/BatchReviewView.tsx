@@ -20,11 +20,11 @@ export function BatchReviewView({
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
-        <WorkflowButton label="Export for Canva" onClick={() => openCanvaExport(batchDetails.name)} isLoading={isLoading} />
-        <WorkflowButton label="Import from Canva" onClick={() => openCanvaImport(batchDetails.name)} isLoading={isLoading} />
-        <WorkflowButton label="Generate" onClick={() => runCommand('generate', batchDetails.name)} isLoading={isLoading} />
-        <WorkflowButton label="Preflight" onClick={() => runCommand('preflight', batchDetails.name)} isLoading={isLoading} />
-        <WorkflowButton label="Post" onClick={() => runCommand('post', batchDetails.name)} variant="primary" isLoading={isLoading} />
+        <WorkflowButton label="Export for Canva" onClick={() => openCanvaExport(batchDetails.name)} disabled={isLoading} />
+        <WorkflowButton label="Import from Canva" onClick={() => openCanvaImport(batchDetails.name)} disabled={isLoading} />
+        <WorkflowButton label="Generate" onClick={() => runCommand('generate', batchDetails.name)} disabled={isLoading} />
+        <WorkflowButton label="Preflight" onClick={() => runCommand('preflight', batchDetails.name)} disabled={isLoading} />
+        <WorkflowButton label="Post" onClick={() => runCommand('post', batchDetails.name)} variant="primary" disabled={isLoading} />
       </div>
       <DepartmentsEditor batchName={batchDetails.name} />
     </div>

@@ -1,4 +1,4 @@
-import { CheckCircle2, Settings as SettingsIcon, Upload } from 'lucide-react';
+import { Settings as SettingsIcon, Upload } from 'lucide-react';
 import { useState } from 'react';
 
 import { SidebarBatchSection } from './sidebar/SidebarBatchSection';
@@ -20,8 +20,6 @@ interface SidebarProps {
   handleBrowse: () => Promise<void>;
   searchTerm: string;
   setSearchTerm: (value: string) => void;
-  runPrepare: (sourcePath: string) => Promise<void>;
-  isLoading: boolean;
 }
 
 export function Sidebar({
@@ -38,8 +36,6 @@ export function Sidebar({
   handleBrowse,
   searchTerm,
   setSearchTerm,
-  runPrepare,
-  isLoading,
 }: SidebarProps) {
   const [newRawSourceName, setNewRawSourceName] = useState('');
   const prepareTarget = buildPrepareTargetSummary(selectedRawPath);
@@ -108,14 +104,6 @@ export function Sidebar({
           </button>
         </div>
 
-        <button
-          disabled={!selectedRawPath || isLoading}
-          onClick={() => selectedRawPath && void runPrepare(selectedRawPath)}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/30 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <CheckCircle2 size={18} />
-          Prepare selected raw source
-        </button>
         <div className="mt-3 rounded-xl border border-white/8 bg-[#0b1327] px-3 py-2.5">
           <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-gray-500">
             Prepare target
@@ -128,6 +116,31 @@ export function Sidebar({
           ) : (
             <div className="mt-1 text-sm text-gray-500">{prepareTarget.emptyMessage}</div>
           )}
+        </div>
+        <div className="mt-3 rounded-xl border border-white/8 bg-[#0b1327] p-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-gray-500">
+            Raw folders
+          </div>
+          <div className="max-h-52 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+            {rawSources.length > 0 ? rawSources.map((item) => (
+              <button
+                key={item.path}
+                onClick={() => void onSelectRawPath(item.path)}
+                className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  selectedRawPath === item.path
+                    ? 'border-blue-400/30 bg-blue-500/10 text-blue-300'
+                    : 'border-transparent text-gray-400 hover:bg-gray-800/50'
+                }`}
+              >
+                <Upload size={14} />
+                <span className="truncate text-sm">{item.name}</span>
+              </button>
+            )) : (
+              <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-gray-500">
+                No raw folders yet
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -142,13 +155,6 @@ export function Sidebar({
       </div>
 
       <div className="custom-scrollbar mt-4 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-        <SidebarBatchSection
-          items={rawSources}
-          selectedPath={selectedRawPath}
-          title="Raws"
-          tone="raw"
-          onSelect={onSelectRawPath}
-        />
         <SidebarBatchSection
           items={preparedBatches}
           selectedPath={selectedPath}

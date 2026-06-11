@@ -18,6 +18,7 @@ import { runCLICommand } from './components/Commands';
 import { useCliStatus } from './hooks/useCliStatus';
 import { useWorkspaceData } from './hooks/useWorkspaceData';
 import {
+  createRawPost,
   deleteBatchImage,
   exportCanvaBatch,
   importCanvaBatch,
@@ -26,7 +27,16 @@ import {
 } from './lib/appApi';
 import { getErrorMessage } from './lib/errorMessage';
 import { selectRawChild, selectRawSource } from './lib/prepareTarget';
-import type { ActionStatus, AppView, BatchDetails, CommandLog, WorkspaceNode } from './types/app';
+import type {
+  ActionStatus,
+  AppView,
+  BatchDetails,
+  BatchWorkflowStatus,
+  CommandLog,
+  CommandRunState,
+  DepartmentEntry,
+  WorkspaceNode,
+} from './types/app';
 
 function buildCanvasExportPreview(batchPath: string) {
   const now = new Date();
@@ -43,6 +53,84 @@ function buildCanvasExportPreview(batchPath: string) {
   return `Canvas/${batchName}/export-${stamp}`;
 }
 
+interface CommandSummary {
+  tone: 'success' | 'error';
+  title: string;
+  lines: string[];
+}
+
+function extractJsonBlock(stdout: string): Record<string, unknown> | null {
+  const start = stdout.indexOf('{');
+  const end = stdout.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  try {
+    return JSON.parse(stdout.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function summarizeCommand(command: string, result: CommandLog): CommandSummary {
+  if (result.returncode !== 0) {
+    return {
+      tone: 'error',
+      title: `${command} failed`,
+      lines: [result.stderr || 'The command did not complete successfully.'],
+    };
+  }
+
+  if (command === 'generate') {
+    const firstLine = result.stdout.split('\n').find((line) => line.trim()) ?? 'Generate complete';
+    const outputHint = firstLine.includes('generated-preview.json')
+      ? 'Preview generated. Existing batch.json is still active.'
+      : 'batch.json is ready for preflight and post.';
+    return {
+      tone: 'success',
+      title: 'Generate complete',
+      lines: [firstLine.trim(), outputHint],
+    };
+  }
+
+  if (command === 'preflight') {
+    const validLine = result.stdout
+      .split('\n')
+      .find((line) => line.trim().startsWith('Valid batch:'))
+      ?.trim() ?? 'Preflight complete';
+    const payload = extractJsonBlock(result.stdout);
+    const lines = [validLine];
+    if (payload) {
+      if (typeof payload.site_name === 'string') lines.push(`Site: ${payload.site_name}`);
+      if (typeof payload.site_url === 'string') lines.push(`URL: ${payload.site_url}`);
+      if (typeof payload.user_name === 'string') lines.push(`User: ${payload.user_name}`);
+      if (typeof payload.taxonomy_posts_checked === 'number') lines.push(`Posts checked: ${payload.taxonomy_posts_checked}`);
+    }
+    return {
+      tone: 'success',
+      title: 'Preflight complete',
+      lines,
+    };
+  }
+
+  if (command === 'post') {
+    const lines = result.stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+    const summary = lines.find((line) => line.startsWith('Post complete:')) ?? 'Post complete';
+    const report = lines.find((line) => line.startsWith('Report:')) ?? '';
+    return {
+      tone: 'success',
+      title: 'Post complete',
+      lines: report ? [summary, report] : [summary],
+    };
+  }
+
+  return {
+    tone: 'success',
+    title: `${command} complete`,
+    lines: [result.stdout || 'Command completed successfully.'],
+  };
+}
+
 function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedRawSourcePath, setSelectedRawSourcePath] = useState<string | null>(null);
@@ -53,6 +141,7 @@ function App() {
     createRawSource,
     browseAndSaveRootPath,
     config,
+    persistConfig,
     refreshBatchDetails,
     refreshWorkspace,
     refreshConfig,
@@ -67,6 +156,11 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showNewPostModal, setShowNewPostModal] = useState(false);
+  const [newPostDate, setNewPostDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newPostTime, setNewPostTime] = useState('09:00');
+  const [newPostDepartmentCode, setNewPostDepartmentCode] = useState('');
+  const [newPostDepartments, setNewPostDepartments] = useState<DepartmentEntry[]>([]);
+  const [isCreatingPost, setIsCreatingPost] = useState(false);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
   const [canvaExportBatchPath, setCanvaExportBatchPath] = useState<string | null>(null);
   const [canvaExportPreviewPath, setCanvaExportPreviewPath] = useState('');
@@ -81,6 +175,13 @@ function App() {
 
   // Preparation Preview states
   const [showPreviewConfirm, setShowPreviewConfirm] = useState<string | null>(null);
+  const [batchPreviewRefreshSignal, setBatchPreviewRefreshSignal] = useState(0);
+  const [commandStates, setCommandStates] = useState<Record<string, CommandRunState>>({
+    generate: 'idle',
+    preflight: 'idle',
+    post: 'idle',
+  });
+  const [commandSummaries, setCommandSummaries] = useState<Partial<Record<string, CommandSummary>>>({});
 
   useEffect(() => {
     if (batchDetails) {
@@ -92,7 +193,51 @@ function App() {
     }
   }, [batchDetails, workspaceNode, rawSourceNode, selectedKind]);
 
+  const resetWorkspaceSelection = () => {
+    setSelectedPath(null);
+    setSelectedRawSourcePath(null);
+    setSelectedKind(null);
+    setRawSourceNode(null);
+    setBatchDetails(null);
+    setEditableName('');
+    setIsEditingName(false);
+    setPreviewImage(null);
+    setShowNewPostModal(false);
+    setNewPostDepartmentCode('');
+    setNewPostDepartments([]);
+    setShowPreviewConfirm(null);
+    setCanvaExportBatchPath(null);
+    setCanvaExportPreviewPath('');
+    setCanvaImportBatchPath(null);
+    setFeatureZip(null);
+    setNewsWatermarkZip(null);
+    setView('editor');
+  };
+
+  useEffect(() => {
+    if (!showNewPostModal || !rawSourceNode) {
+      return;
+    }
+
+    const departments = rawSourceNode.workspace_departments?.departments ?? [];
+    setNewPostDepartments(departments);
+    setNewPostDepartmentCode((current) => current || departments[0]?.code || '');
+  }, [showNewPostModal, rawSourceNode]);
+
+  useEffect(() => {
+    if (selectedKind !== 'batch') {
+      return;
+    }
+    setCommandStates({
+      generate: 'idle',
+      preflight: 'idle',
+      post: 'idle',
+    });
+    setCommandSummaries({});
+  }, [selectedKind, selectedPath]);
+
   const handleSelectRawPath = async (path: string) => {
+    setView('editor');
     const nextSelection = selectRawSource(path);
     setSelectedPath(nextSelection.selectedPath);
     setSelectedKind(nextSelection.selectedKind);
@@ -102,6 +247,7 @@ function App() {
   };
 
   const handleSelectRawChildPath = async (path: string) => {
+    setView('editor');
     const nextSelection = selectRawChild(selectedRawSourcePath, path);
     setSelectedPath(nextSelection.selectedPath);
     setSelectedKind(nextSelection.selectedKind);
@@ -135,7 +281,10 @@ function App() {
 
   const handleBrowse = async () => {
     try {
-      await browseAndSaveRootPath();
+      const nextPath = await browseAndSaveRootPath();
+      if (nextPath && nextPath !== config.root_path) {
+        resetWorkspaceSelection();
+      }
     } catch {
       alert('Error browsing folder');
     }
@@ -150,6 +299,25 @@ function App() {
     if (result.returncode !== 0) {
       setIsConsoleExpanded(true);
     }
+  };
+
+  const refreshCurrentRawSource = async () => {
+    if (!selectedRawSourcePath) return;
+    const node = await refreshBatchDetails(selectedRawSourcePath);
+    setRawSourceNode(node);
+  };
+
+  const rawSourceHasDepartments = Boolean(
+    rawSourceNode?.workspace_departments?.departments && rawSourceNode.workspace_departments.departments.length > 0,
+  );
+
+  const redirectToDepartmentsSettings = (actionLabel: string) => {
+    setView('settings');
+    setActionStatus({
+      tone: 'error',
+      title: 'Set departments first',
+      message: `${actionLabel} requires workspace departments.json. Open Settings and configure it before continuing.`,
+    });
   };
 
   const runPrepare = async (sourcePath: string) => {
@@ -167,6 +335,7 @@ function App() {
         setShowPreviewConfirm(outputPath);
         setSelectedPath(outputPath);
         setSelectedKind('batch');
+        await refreshBatchDetails(outputPath);
       }
     } finally {
       setIsLoading(false);
@@ -174,11 +343,25 @@ function App() {
   };
 
   const runCommand = async (cmd: string, path: string) => {
-    setIsLoading(true);
-    const result = await runCLICommand(cmd, [path]);
-    handleCommandResult(result);
-    await refreshWorkspace();
-    setIsLoading(false);
+    setCommandStates((current) => ({ ...current, [cmd]: 'running' }));
+    try {
+      const result = await runCLICommand(cmd, [path]);
+      handleCommandResult(result);
+      setCommandStates((current) => ({ ...current, [cmd]: result.returncode === 0 ? 'success' : 'error' }));
+      setCommandSummaries((current) => ({ ...current, [cmd]: summarizeCommand(cmd, result) }));
+      await refreshWorkspace();
+      await refreshBatchDetails(path);
+    } catch (error) {
+      const failedResult = {
+        stdout: '',
+        stderr: getErrorMessage(error),
+        returncode: 1,
+        command: `${cmd} ${path}`,
+      };
+      handleCommandResult(failedResult);
+      setCommandStates((current) => ({ ...current, [cmd]: 'error' }));
+      setCommandSummaries((current) => ({ ...current, [cmd]: summarizeCommand(cmd, failedResult) }));
+    }
   };
 
   const openCanvaExport = (batchPath: string) => {
@@ -251,6 +434,7 @@ function App() {
       await refreshWorkspace();
       await refreshBatchDetails(canvaImportBatchPath);
       if (result.returncode === 0) {
+        setBatchPreviewRefreshSignal((current) => current + 1);
         setActionStatus({
           tone: 'success',
           title: 'Canva import complete',
@@ -313,13 +497,67 @@ function App() {
     await handleSelectRawPath(result.path);
   };
 
-  const handleSelectBatchPath = (path: string) => {
+  const handleCreateRawPost = async () => {
+    if (!rawSourceNode) return;
+    if (!rawSourceHasDepartments) {
+      redirectToDepartmentsSettings('New Post');
+      return;
+    }
+    setIsCreatingPost(true);
+    try {
+      const result = await createRawPost(rawSourceNode.path, {
+        date: newPostDate,
+        time: newPostTime,
+        department_code: newPostDepartmentCode,
+      });
+      await refreshWorkspace();
+      await refreshCurrentRawSource();
+      setShowNewPostModal(false);
+      setSelectedPath(result.path);
+      await refreshBatchDetails(result.path);
+      setActionStatus({
+        tone: 'success',
+        title: 'Raw post created',
+        message: `Created ${result.name} in ${rawSourceNode.name}.`,
+      });
+    } catch (error) {
+      setActionStatus({
+        tone: 'error',
+        title: 'Unable to create post',
+        message: getErrorMessage(error, 'Unable to create the raw post folder right now.'),
+      });
+    } finally {
+      setIsCreatingPost(false);
+    }
+  };
+
+  const handlePrepareFromRawSource = () => {
+    if (!rawSourceNode) return;
+    if (!rawSourceHasDepartments) {
+      redirectToDepartmentsSettings('Prepare');
+      return;
+    }
+    void runPrepare(rawSourceNode.path);
+  };
+
+  const handleOpenNewPostModal = () => {
+    if (!rawSourceNode) return;
+    if (!rawSourceHasDepartments) {
+      redirectToDepartmentsSettings('New Post');
+      return;
+    }
+    setShowNewPostModal(true);
+  };
+
+  const handleSelectBatchPath = async (path: string) => {
+    setView('editor');
     setSelectedPath(path);
     setSelectedKind('batch');
-    setBatchDetails(null);
+    await refreshBatchDetails(path);
   };
 
   const handleSelectCanvasPath = async (path: string) => {
+    setView('editor');
     setSelectedPath(path);
     setSelectedKind('canvas');
     await refreshBatchDetails(path);
@@ -330,10 +568,14 @@ function App() {
       config={config}
       fetchConfig={refreshConfig}
       handleBrowse={handleBrowse}
+      onClose={() => setView('editor')}
+      onWorkspaceRootChange={resetWorkspaceSelection}
+      saveConfig={persistConfig}
       cliStatus={cliStatus}
       setupCli={installCli}
       updateCli={updateCli}
       checkCliInfo={refreshCliStatus}
+      refreshWorkspaceContext={refreshCurrentRawSource}
     />
   ) : selectedKind === 'batch' && selectedPath ? (
     <BatchPreviewView
@@ -342,6 +584,10 @@ function App() {
       openCanvaExport={openCanvaExport}
       openCanvaImport={openCanvaImport}
       isLoading={isLoading}
+      refreshSignal={batchPreviewRefreshSignal}
+      workflowStatus={(workspaceNode?.workflow_status as BatchWorkflowStatus | undefined) ?? null}
+      commandStates={commandStates}
+      commandSummaries={commandSummaries}
     />
   ) : selectedKind === 'raw' && rawSourceNode ? (
     <RawSourceWorkspaceView
@@ -349,7 +595,8 @@ function App() {
       selectedPath={selectedPath}
       editorDetails={batchDetails}
       onSelectChild={handleSelectRawChildPath}
-      onNewPost={() => setShowNewPostModal(true)}
+      onNewPost={handleOpenNewPostModal}
+      onPrepare={handlePrepareFromRawSource}
       handleContentChange={handleContentChange}
       handleUploadImages={handleUploadImages}
       handleDeleteImage={handleDeleteImage}
@@ -360,6 +607,7 @@ function App() {
       editableName={editableName}
       setEditableName={setEditableName}
       handleRename={handleRename}
+      isLoading={isLoading}
     />
   ) : selectedKind === 'raw' ? (
     <RawSourceBrowser
@@ -391,7 +639,7 @@ function App() {
           selectedPath={selectedPath}
           selectedRawPath={selectedRawSourcePath}
           onSelectRawPath={handleSelectRawPath}
-          onSelectBatchPath={handleSelectBatchPath}
+          onSelectBatchPath={(path) => void handleSelectBatchPath(path)}
           onSelectCanvasPath={handleSelectCanvasPath}
           onCreateRawSource={handleCreateRawSource}
           setView={setView}
@@ -400,8 +648,6 @@ function App() {
           handleBrowse={handleBrowse}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
-          runPrepare={runPrepare}
-          isLoading={isLoading}
         />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-white/5 bg-[radial-gradient(circle_at_top,_rgba(43,74,160,0.16),_transparent_45%),linear-gradient(180deg,_#091024_0%,_#040814_100%)]">
@@ -429,7 +675,26 @@ function App() {
         />
       )}
 
-      {showNewPostModal && <NewPostModal onClose={() => setShowNewPostModal(false)} />}
+      {showNewPostModal && rawSourceNode && (
+        <NewPostModal
+          onClose={() => setShowNewPostModal(false)}
+          rawSourceName={rawSourceNode.name}
+          selectedDate={newPostDate}
+          selectedTime={newPostTime}
+          departments={newPostDepartments.map((item) => ({ code: item.code, name: item.name }))}
+          selectedDepartmentCode={newPostDepartmentCode}
+          isSubmitting={isCreatingPost}
+          helperMessage={
+            newPostDepartments.length === 0
+              ? 'ยังไม่มี workspace departments.json ให้ไปตั้งค่าใน Settings ก่อน'
+              : undefined
+          }
+          onDateChange={setNewPostDate}
+          onTimeChange={setNewPostTime}
+          onDepartmentChange={setNewPostDepartmentCode}
+          onSubmit={() => void handleCreateRawPost()}
+        />
+      )}
 
       {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
 

@@ -3,6 +3,7 @@ import { ChevronRight, FolderOpen, Plus } from 'lucide-react';
 import type { BatchDetails, WorkspaceNode } from '../../types/app';
 import { RawSourceBrowser } from './RawSourceBrowser';
 import { RawSourceEditor } from './RawSourceEditor';
+import { WorkflowButton } from './WorkflowButton';
 
 interface RawSourceWorkspaceViewProps {
   sourceNode: WorkspaceNode | null;
@@ -10,6 +11,7 @@ interface RawSourceWorkspaceViewProps {
   editorDetails: BatchDetails | null;
   onSelectChild: (path: string) => void;
   onNewPost: () => void;
+  onPrepare: () => void;
   handleContentChange: (content: string) => void;
   handleUploadImages: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleDeleteImage: (imageName: string) => Promise<void>;
@@ -20,6 +22,7 @@ interface RawSourceWorkspaceViewProps {
   editableName: string;
   setEditableName: (value: string) => void;
   handleRename: () => Promise<void>;
+  isLoading: boolean;
 }
 
 export function RawSourceWorkspaceView({
@@ -28,6 +31,7 @@ export function RawSourceWorkspaceView({
   editorDetails,
   onSelectChild,
   onNewPost,
+  onPrepare,
   handleContentChange,
   handleUploadImages,
   handleDeleteImage,
@@ -38,6 +42,7 @@ export function RawSourceWorkspaceView({
   editableName,
   setEditableName,
   handleRename,
+  isLoading,
 }: RawSourceWorkspaceViewProps) {
   const breadcrumb = sourceNode?.path.split('/').filter(Boolean) ?? [];
 
@@ -77,6 +82,14 @@ export function RawSourceWorkspaceView({
                 <Plus size={16} />
                 New Post
               </button>
+            </div>
+            <div className="mt-3">
+              <WorkflowButton
+                label="Prepare"
+                runningLabel="Preparing..."
+                onClick={onPrepare}
+                state={isLoading ? 'running' : 'idle'}
+              />
             </div>
           </header>
           <RawSourceBrowser

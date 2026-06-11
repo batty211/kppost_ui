@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   fetchCliInfo,
@@ -19,6 +19,7 @@ const DEFAULT_CLI_STATUS: CliStatus = {
 
 export function useCliStatus() {
   const [cliStatus, setCliStatus] = useState<CliStatus>(DEFAULT_CLI_STATUS);
+  const previousStatusRef = useRef(cliStatus.status);
 
   const refreshCliStatus = async (forceRemote = false) => {
     try {
@@ -30,19 +31,29 @@ export function useCliStatus() {
 
   const installCli = async () => {
     try {
-      await startCliInstall();
+      const response = await startCliInstall();
+      setCliStatus((current) => ({
+        ...current,
+        status: 'installing',
+        message: response?.message ?? 'CLI install started',
+      }));
       void refreshCliStatus(true);
     } catch {
-      alert('Failed');
+      alert('Failed to start CLI install');
     }
   };
 
   const updateCli = async () => {
     try {
-      await startCliUpdate();
+      const response = await startCliUpdate();
+      setCliStatus((current) => ({
+        ...current,
+        status: 'updating',
+        message: response?.message ?? 'CLI update started',
+      }));
       void refreshCliStatus(true);
     } catch {
-      alert('Failed');
+      alert('Failed to start CLI update');
     }
   };
 
@@ -61,6 +72,33 @@ export function useCliStatus() {
 
     return () => window.clearInterval(timer);
   }, [cliStatus.status]);
+
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+    if (previousStatus !== cliStatus.status) {
+      if (
+        previousStatus === 'updating' &&
+        cliStatus.status === 'ready' &&
+        cliStatus.message
+      ) {
+        alert(cliStatus.message);
+      } else if (
+        previousStatus === 'installing' &&
+        cliStatus.status === 'ready' &&
+        cliStatus.message
+      ) {
+        alert(cliStatus.message);
+      } else if (
+        ['installing', 'updating'].includes(previousStatus) &&
+        cliStatus.status === 'error' &&
+        cliStatus.message
+      ) {
+        alert(cliStatus.message);
+      }
+    }
+
+    previousStatusRef.current = cliStatus.status;
+  }, [cliStatus.status, cliStatus.message]);
 
   return {
     cliStatus,
