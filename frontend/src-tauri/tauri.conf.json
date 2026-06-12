@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "kppost-ui",
+  "version": "0.1.0",
+  "identifier": "com.kppost.ui",
+  "build": {
+    "beforeBuildCommand": "npm run build:web && npm run native:stage",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis"],
+    "resources": [
+      "../../.native-build/stage/backend",
+      "../../.native-build/stage/frontend",
+      "../../.native-build/stage/python",
+      "../../.native-build/stage/manifest.json"
+    ]
+  }
+}

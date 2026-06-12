@@ -10,10 +10,15 @@ backend.log
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/src-tauri/target/
 backend/cli/kppwppost/.venv/
 backend/cli/kppwppost/.pytest_cache/
 backend/cli/kppwppost/__pycache__/
 .local-runtime/
+.native-build/
 .pytest_cache/
 __pycache__/
 backend/cli/kppwppost/
+native/python/*
+!native/python/README.md
+!native/python/.gitkeep

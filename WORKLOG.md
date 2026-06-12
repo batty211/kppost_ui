@@ -89,6 +89,23 @@
 
 ### Latest Changes
 
+- เพิ่ม scaffold สำหรับ native desktop packaging ด้วย Tauri:
+  - `frontend/src-tauri/` เป็น native shell
+  - เปิด backend ภายในแอปและรอ `GET /health` ก่อนสร้างหน้าต่างหลัก
+  - รองรับ contract `KPPPOST_UI_APP_MODE`, `KPPPOST_UI_HOST`, `KPPPOST_UI_PORT`, `PYTHON_EXECUTABLE`
+- เพิ่ม resource staging สำหรับ native build:
+  - `scripts/native/stage-resources.mjs`
+  - staging backend ไปไว้ที่ `.native-build/stage/backend`
+  - staging bundled Python runtimes จาก `native/python/`
+- เปลี่ยน frontend API base ให้ resolve ตาม runtime:
+  - dev server ใช้ `127.0.0.1:8000`
+  - packaged/backend-served mode ใช้ `window.location.origin`
+- เพิ่ม backend route `GET /health` สำหรับ native launcher
+- เพิ่ม tests สำหรับ:
+  - health route
+  - `PYTHON_EXECUTABLE` override ตอนสร้าง CLI venv
+  - frontend API base resolution
+
 - แก้ WordPress config ให้ใช้งานตรงกับ CLI runtime จริง:
   - ใช้ `workspace/.env` เป็น source หลัก
   - fallback อ่านจาก legacy CLI `.env`

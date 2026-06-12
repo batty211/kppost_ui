@@ -113,6 +113,27 @@ class CliManagerEnvTests(unittest.TestCase):
         self.assertEqual(env["WP_USERNAME"], "batch-user")
         self.assertEqual(env["WP_APPLICATION_PASSWORD"], "workspace-pass")
 
+    def test_create_or_repair_venv_uses_python_executable_override(self) -> None:
+        venv_dir = Path(self.temp_dir.name) / "venv"
+        expected_python = Path(self.temp_dir.name) / "python-runtime" / "bin" / "python3"
+        expected_python.parent.mkdir(parents=True)
+        expected_python.write_text("", encoding="utf-8")
+
+        with patch.object(cli_manager, "get_cli_venv_dir", return_value=venv_dir), patch.object(
+            cli_manager,
+            "get_cli_python_path",
+            return_value=venv_dir / "bin" / "python",
+        ), patch.dict(os.environ, {"PYTHON_EXECUTABLE": str(expected_python)}, clear=False), patch.object(
+            cli_manager.subprocess,
+            "run",
+        ) as subprocess_run:
+            cli_manager._create_or_repair_venv()
+
+        subprocess_run.assert_called_once_with(
+            [str(expected_python), "-m", "venv", os.fspath(venv_dir)],
+            check=True,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -80,6 +80,16 @@ RAW_DEPARTMENTS_TEMPLATE = {
 }
 
 
+@app.get("/health")
+def health_check():
+    return {
+        "status": "ok",
+        "app_mode": os.environ.get("KPPPOST_UI_APP_MODE", "web"),
+        "host": os.environ.get("KPPPOST_UI_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("KPPPOST_UI_PORT", "8000")),
+    }
+
+
 def _natural_sort_key(value: str) -> list[tuple[int, object]]:
     parts = re.split(r"(\d+)", value.casefold())
     return [(0, int(part)) if part.isdigit() else (1, part) for part in parts]

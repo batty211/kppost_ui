@@ -30,3 +30,10 @@ npm run dev
 - [Local testing guide](./TESTING.md)
 - [CLI spec](./backend/cli/kppwppost/SPEC.md)
 - [CLI architecture](./backend/cli/kppwppost/ARCHITECTURE.md)
+
+## Native Packaging Scaffold
+
+- Native shell lives under `frontend/src-tauri/`
+- Run `cd frontend && npm run native:stage` to stage backend resources for Tauri
+- Put bundled Python 3.12 runtimes under `native/python/` before building native installers
+- Run `cd frontend && npm run native:build` after staging dependencies are available

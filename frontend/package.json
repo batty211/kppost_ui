@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:web",
+    "build:web": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "node --test --experimental-strip-types src/**/*.test.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "native:stage": "node ../scripts/native/stage-resources.mjs",
+    "native:build": "node ../scripts/native/build-native.mjs release",
+    "native:build:debug": "node ../scripts/native/build-native.mjs debug"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
