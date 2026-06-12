@@ -13,6 +13,17 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+#[cfg(unix)]
+const SIGTERM: i32 = 15;
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn setsid() -> i32;
+    fn killpg(pgrp: i32, sig: i32) -> i32;
+}
 
 const APP_TITLE: &str = "kppost-ui";
 const BACKEND_STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -74,9 +85,18 @@ fn run_app() -> Result<()> {
         .context("failed to build tauri application")?;
 
     app.run(|app, event| {
-        if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-            append_native_log(app, "exit requested");
-            terminate_backend(app);
+        match event {
+            RunEvent::Exit | RunEvent::ExitRequested { .. } => {
+                append_native_log(app, "exit requested");
+                terminate_backend(app);
+            }
+            RunEvent::WindowEvent { label, event, .. } => {
+                if label == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                    append_native_log(app, "main window destroyed");
+                    terminate_backend(app);
+                }
+            }
+            _ => {}
         }
     });
 
@@ -98,7 +118,8 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<BackendLaunch> {
     let port = pick_available_port()?;
     let url = format!("http://{host}:{port}");
 
-    let mut child = Command::new(&python_executable)
+    let mut command = Command::new(&python_executable);
+    command
         .arg(&backend_entry)
         .current_dir(&backend_dir)
         .env("KPPPOST_UI_APP_MODE", "native")
@@ -108,7 +129,9 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<BackendLaunch> {
         .env("PYTHONPATH", &backend_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(backend_launch_log.try_clone().context("failed to clone backend launch log")?))
-        .stderr(Stdio::from(backend_launch_log))
+        .stderr(Stdio::from(backend_launch_log));
+    configure_backend_command(&mut command);
+    let mut child = command
         .spawn()
         .with_context(|| format!("failed to launch backend with {}", python_executable.display()))?;
 
@@ -137,12 +160,38 @@ fn terminate_backend(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<BackendState>() {
         if let Ok(mut slot) = state.child.lock() {
             if let Some(child) = slot.as_mut() {
-                let _ = child.kill();
+                terminate_backend_child(child);
                 let _ = child.wait();
             }
             *slot = None;
         }
     }
+}
+
+fn configure_backend_command(command: &mut Command) {
+    #[cfg(unix)]
+    unsafe {
+        command.pre_exec(|| {
+            if setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+fn terminate_backend_child(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        if pid > 0 {
+            unsafe {
+                let _ = killpg(pid, SIGTERM);
+            }
+        }
+    }
+
+    let _ = child.kill();
 }
 
 fn wait_for_backend(host: &str, port: u16, child: &mut Child) -> Result<()> {

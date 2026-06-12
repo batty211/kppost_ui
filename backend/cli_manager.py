@@ -42,6 +42,7 @@ WP_ENV_KEYS = (
     "WP_TIMEOUT_SECONDS",
     "WP_VERIFY_SSL",
 )
+WINDOWS_CLI_EXTRA_DEPENDENCIES = ("tzdata",)
 
 
 def _default_state() -> dict[str, Any]:
@@ -319,6 +320,9 @@ def _install_from_source(source_dir: Path) -> None:
     _create_or_repair_venv()
     python_path = get_cli_python_path()
     logger.info("Installing CLI from %s", source_dir)
+    install_targets = [os.fspath(source_dir)]
+    if sys.platform == "win32":
+        install_targets.extend(WINDOWS_CLI_EXTRA_DEPENDENCIES)
     subprocess.run(
         [
             os.fspath(python_path),
@@ -327,7 +331,7 @@ def _install_from_source(source_dir: Path) -> None:
             "install",
             "--upgrade",
             "--force-reinstall",
-            os.fspath(source_dir),
+            *install_targets,
         ],
         check=True,
     )

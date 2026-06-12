@@ -28,6 +28,9 @@ Windows note:
   `powershell -ExecutionPolicy Bypass -File scripts/native/build-local-python-runtime.ps1`
 - The script copies the local Python installation into `native/python/windows-x64/`
   and installs `backend/requirements.txt` into that copied runtime.
+- The CLI also needs `tzdata` on Windows so `ZoneInfo("Asia/Bangkok")` works during
+  `prepare` and `post`. The app installer now adds that package into the CLI venv
+  automatically, but older installs may need a reinstall/update of the CLI runtime.
 
 The native staging step copies any runtime folders it finds into `.native-build/stage/python/`
 so the Tauri shell can launch the FastAPI backend and let the app manage the CLI venv

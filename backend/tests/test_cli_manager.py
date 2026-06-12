@@ -134,6 +134,67 @@ class CliManagerEnvTests(unittest.TestCase):
             check=True,
         )
 
+    def test_install_from_source_adds_tzdata_on_windows(self) -> None:
+        source_dir = Path(self.temp_dir.name) / "source"
+        source_dir.mkdir()
+        python_path = Path(self.temp_dir.name) / "venv" / "Scripts" / "python.exe"
+        python_path.parent.mkdir(parents=True)
+        python_path.write_text("", encoding="utf-8")
+
+        with patch.object(cli_manager, "_create_or_repair_venv"), patch.object(
+            cli_manager,
+            "get_cli_python_path",
+            return_value=python_path,
+        ), patch.object(cli_manager.sys, "platform", "win32"), patch.object(
+            cli_manager.subprocess,
+            "run",
+        ) as subprocess_run:
+            cli_manager._install_from_source(source_dir)
+
+        subprocess_run.assert_called_once_with(
+            [
+                str(python_path),
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                str(source_dir),
+                "tzdata",
+            ],
+            check=True,
+        )
+
+    def test_install_from_source_keeps_existing_targets_on_non_windows(self) -> None:
+        source_dir = Path(self.temp_dir.name) / "source"
+        source_dir.mkdir()
+        python_path = Path(self.temp_dir.name) / "venv" / "bin" / "python"
+        python_path.parent.mkdir(parents=True)
+        python_path.write_text("", encoding="utf-8")
+
+        with patch.object(cli_manager, "_create_or_repair_venv"), patch.object(
+            cli_manager,
+            "get_cli_python_path",
+            return_value=python_path,
+        ), patch.object(cli_manager.sys, "platform", "darwin"), patch.object(
+            cli_manager.subprocess,
+            "run",
+        ) as subprocess_run:
+            cli_manager._install_from_source(source_dir)
+
+        subprocess_run.assert_called_once_with(
+            [
+                str(python_path),
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                str(source_dir),
+            ],
+            check=True,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
