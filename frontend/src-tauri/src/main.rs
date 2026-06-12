@@ -47,7 +47,7 @@ fn run_app() -> Result<()> {
                 Ok(launch) => launch,
                 Err(error) => {
                     append_native_log(app.handle(), &format!("backend launch failed: {error:#}"));
-                    return Err(error);
+                    return Err(error.into());
                 }
             };
             {
