@@ -20,6 +20,15 @@ Each bundled runtime must also already include the backend dependencies from
 - `uvicorn`
 - `python-multipart`
 
+Windows note:
+
+- If the bundled runtime has no `pip` or `ensurepip`, do not try to repair it in place.
+- Rebuild it from a full local Python or Conda environment instead.
+- Repo helper with regular Windows Python:
+  `powershell -ExecutionPolicy Bypass -File scripts/native/build-local-python-runtime.ps1`
+- The script copies the local Python installation into `native/python/windows-x64/`
+  and installs `backend/requirements.txt` into that copied runtime.
+
 The native staging step copies any runtime folders it finds into `.native-build/stage/python/`
 so the Tauri shell can launch the FastAPI backend and let the app manage the CLI venv
 without requiring Python to be installed on the user's machine.
