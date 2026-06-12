@@ -7,7 +7,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..', '..');
 const npmCacheDir = path.join(rootDir, '.native-build', 'npm-cache');
 const cargoHomeDir = path.join(rootDir, '.native-build', 'cargo-home');
-const rustupBinDir = path.join(process.env.HOME ?? '', '.cargo', 'bin');
+const userHomeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
+const rustupBinDir = path.join(userHomeDir, '.cargo', 'bin');
+const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
 await mkdir(npmCacheDir, { recursive: true });
 await mkdir(cargoHomeDir, { recursive: true });
@@ -15,7 +17,7 @@ await mkdir(cargoHomeDir, { recursive: true });
 const args = process.argv.slice(2);
 const commandArgs = ['--cache', npmCacheDir, '@tauri-apps/cli@2', ...args];
 
-const child = spawn('npx', commandArgs, {
+const child = spawn(npxCommand, commandArgs, {
   cwd: path.join(rootDir, 'frontend'),
   stdio: 'inherit',
   env: {
@@ -23,6 +25,11 @@ const child = spawn('npx', commandArgs, {
     CARGO_HOME: cargoHomeDir,
     PATH: `${rustupBinDir}${path.delimiter}${process.env.PATH ?? ''}`,
   },
+});
+
+child.on('error', (error) => {
+  console.error(error);
+  process.exit(1);
 });
 
 child.on('exit', (code, signal) => {

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..', '..');
 const mode = process.argv[2] === 'debug' ? 'debug' : 'release';
+const nodeCommand = process.execPath;
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -13,6 +14,10 @@ function run(command, args, options = {}) {
       cwd: rootDir,
       stdio: 'inherit',
       ...options,
+    });
+
+    child.on('error', (error) => {
+      reject(error);
     });
 
     child.on('exit', (code, signal) => {
@@ -54,7 +59,7 @@ async function main() {
     buildArgs.push('--debug');
   }
 
-  await run('node', [path.join(rootDir, 'scripts', 'native', 'run-tauri-build.mjs'), ...buildArgs], {
+  await run(nodeCommand, [path.join(rootDir, 'scripts', 'native', 'run-tauri-build.mjs'), ...buildArgs], {
     cwd: path.join(rootDir, 'frontend'),
   });
 
