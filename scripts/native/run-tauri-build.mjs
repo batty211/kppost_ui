@@ -20,6 +20,8 @@ const commandArgs = ['--cache', npmCacheDir, '@tauri-apps/cli@2', ...args];
 const child = spawn(npxCommand, commandArgs, {
   cwd: path.join(rootDir, 'frontend'),
   stdio: 'inherit',
+  shell: process.platform === 'win32',
+  windowsHide: process.platform === 'win32',
   env: {
     ...process.env,
     CARGO_HOME: cargoHomeDir,
