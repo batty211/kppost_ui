@@ -12,6 +12,7 @@ const frontendStageDir = path.join(stageRoot, 'frontend', 'dist');
 const pythonSourceDir = path.join(rootDir, 'native', 'python');
 const pythonStageDir = path.join(stageRoot, 'python');
 const metadataPath = path.join(stageRoot, 'manifest.json');
+const requiredPythonModules = ['fastapi', 'uvicorn', 'multipart'];
 
 const backendIgnoreNames = new Set([
   '__pycache__',
@@ -85,11 +86,92 @@ async function listPythonRuntimeSlugs() {
   }
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function detectPythonSitePackages(runtimeDir) {
+  const candidates = [
+    path.join(runtimeDir, 'Lib', 'site-packages'),
+    path.join(runtimeDir, 'lib'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!(await pathExists(candidate))) {
+      continue;
+    }
+
+    if (candidate.endsWith('site-packages')) {
+      return candidate;
+    }
+
+    try {
+      const entries = await fs.readdir(candidate, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('python')) {
+          continue;
+        }
+
+        const sitePackagesDir = path.join(candidate, entry.name, 'site-packages');
+        if (await pathExists(sitePackagesDir)) {
+          return sitePackagesDir;
+        }
+      }
+    } catch {
+      // ignore and continue scanning other candidates
+    }
+  }
+
+  return null;
+}
+
+async function validatePythonRuntime(slug) {
+  const runtimeDir = path.join(pythonSourceDir, slug);
+  const sitePackagesDir = await detectPythonSitePackages(runtimeDir);
+
+  if (!sitePackagesDir) {
+    throw new Error(
+      `Bundled Python runtime '${slug}' is missing a detectable site-packages directory. Expected either Lib/site-packages or lib/python*/site-packages.`,
+    );
+  }
+
+  const missingModules = [];
+  for (const moduleName of requiredPythonModules) {
+    const modulePath = path.join(sitePackagesDir, moduleName);
+    const distInfoPrefix = `${moduleName.replace(/-/g, '_')}-`;
+    const hasModuleDir = await pathExists(modulePath);
+    let hasDistInfo = false;
+
+    if (!hasModuleDir) {
+      const entries = await fs.readdir(sitePackagesDir, { withFileTypes: true });
+      hasDistInfo = entries.some(
+        (entry) => entry.name.startsWith(distInfoPrefix) && entry.name.endsWith('.dist-info'),
+      );
+    }
+
+    if (!hasModuleDir && !hasDistInfo) {
+      missingModules.push(moduleName);
+    }
+  }
+
+  if (missingModules.length > 0) {
+    throw new Error(
+      `Bundled Python runtime '${slug}' is missing backend dependencies: ${missingModules.join(', ')}. Install backend/requirements.txt into that runtime before native staging/build.`,
+    );
+  }
+}
+
 async function stagePythonRuntimes() {
   const runtimeSlugs = await listPythonRuntimeSlugs();
   await ensureCleanDir(pythonStageDir);
 
   for (const slug of runtimeSlugs) {
+    await validatePythonRuntime(slug);
     await copyDirectory(
       path.join(pythonSourceDir, slug),
       path.join(pythonStageDir, slug),

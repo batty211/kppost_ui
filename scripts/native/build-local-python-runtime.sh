@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+BACKEND_REQUIREMENTS="${ROOT_DIR}/backend/requirements.txt"
 
 TARGET_SLUG="${1:-macos-arm64}"
 SOURCE_PREFIX="${SOURCE_PREFIX:-/Users/theb/miniconda3}"
@@ -22,12 +23,19 @@ if [ ! -x "${SOURCE_PREFIX}/bin/python3" ]; then
   exit 1
 fi
 
+if [ ! -f "${BACKEND_REQUIREMENTS}" ]; then
+  echo "Missing backend requirements file at ${BACKEND_REQUIREMENTS}" >&2
+  exit 1
+fi
+
 echo "== Building bundled Python runtime =="
 echo "Source prefix: ${SOURCE_PREFIX}"
 echo "Target slug:   ${TARGET_SLUG}"
 echo "Output dir:    ${OUTPUT_DIR}"
 
 conda run -n base python -m pip install conda-pack
+echo "Installing backend Python dependencies into source runtime"
+"${SOURCE_PREFIX}/bin/python3" -m pip install -r "${BACKEND_REQUIREMENTS}"
 conda run -n base conda-pack -p "${SOURCE_PREFIX}" -o "${ARCHIVE_PATH}" --force --ignore-missing-files
 
 rm -rf "${OUTPUT_DIR}"

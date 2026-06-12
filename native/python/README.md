@@ -13,6 +13,13 @@ Each folder should contain a runnable Python executable:
 - macOS: `bin/python3` (or `bin/python`)
 - Windows: `python.exe`
 
+Each bundled runtime must also already include the backend dependencies from
+`backend/requirements.txt`, currently:
+
+- `fastapi`
+- `uvicorn`
+- `python-multipart`
+
 The native staging step copies any runtime folders it finds into `.native-build/stage/python/`
 so the Tauri shell can launch the FastAPI backend and let the app manage the CLI venv
 without requiring Python to be installed on the user's machine.
