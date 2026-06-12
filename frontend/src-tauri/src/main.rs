@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
@@ -15,6 +16,9 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 const APP_TITLE: &str = "kppost-ui";
 const BACKEND_STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const LOG_DIR_NAME: &str = "logs";
+const NATIVE_LOG_FILE_NAME: &str = "native.log";
+const BACKEND_LAUNCH_LOG_FILE_NAME: &str = "backend-launch.log";
 
 #[derive(Default)]
 struct BackendState {
@@ -27,11 +31,25 @@ struct BackendLaunch {
 }
 
 fn main() {
-    tauri::Builder::default()
+    if let Err(error) = run_app() {
+        log_fallback_native_message(&format!("application startup failed: {error:#}"));
+        panic!("error while building tauri application: {error:#}");
+    }
+}
+
+fn run_app() -> Result<()> {
+    let app = tauri::Builder::default()
         .setup(|app| {
             app.manage(BackendState::default());
+            append_native_log(app.handle(), "setup started");
 
-            let launch = launch_backend(app.handle())?;
+            let launch = match launch_backend(app.handle()) {
+                Ok(launch) => launch,
+                Err(error) => {
+                    append_native_log(app.handle(), &format!("backend launch failed: {error:#}"));
+                    return Err(error);
+                }
+            };
             {
                 let state = app.state::<BackendState>();
                 let mut slot = state.child.lock().expect("backend state poisoned");
@@ -49,15 +67,20 @@ fn main() {
             .build()
             .context("failed to build main window")?;
 
+            append_native_log(app.handle(), "main window created");
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| {
-            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-                terminate_backend(app);
-            }
-        });
+        .context("failed to build tauri application")?;
+
+    app.run(|app, event| {
+        if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
+            append_native_log(app, "exit requested");
+            terminate_backend(app);
+        }
+    });
+
+    Ok(())
 }
 
 fn launch_backend(app: &tauri::AppHandle) -> Result<BackendLaunch> {
@@ -65,6 +88,7 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<BackendLaunch> {
     let python_root = find_resource_subdir(app, "python")?;
     let python_executable = resolve_python_executable(&python_root)?;
     let backend_entry = backend_dir.join("main.py");
+    let backend_launch_log = open_log_file(app, BACKEND_LAUNCH_LOG_FILE_NAME)?;
 
     if !backend_entry.is_file() {
         bail!("Missing backend entrypoint at {}", backend_entry.display());
@@ -83,16 +107,29 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<BackendLaunch> {
         .env("PYTHON_EXECUTABLE", &python_executable)
         .env("PYTHONPATH", &backend_dir)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(backend_launch_log.try_clone().context("failed to clone backend launch log")?))
+        .stderr(Stdio::from(backend_launch_log))
         .spawn()
         .with_context(|| format!("failed to launch backend with {}", python_executable.display()))?;
 
+    append_native_log(
+        app,
+        &format!(
+            "backend spawned with python={} entry={} host={} port={}",
+            python_executable.display(),
+            backend_entry.display(),
+            host,
+            port
+        ),
+    );
+
     if let Err(error) = wait_for_backend(host, port, &mut child) {
+        append_native_log(app, &format!("backend health check failed: {error:#}"));
         let _ = child.kill();
         return Err(error);
     }
 
+    append_native_log(app, &format!("backend healthy at {url}"));
     Ok(BackendLaunch { child, url })
 }
 
@@ -171,6 +208,34 @@ fn find_resource_subdir(app: &tauri::AppHandle, relative_name: &str) -> Result<P
     Err(anyhow!(
         "Missing staged resource directory '{relative_name}'. Run the native staging step before building the app."
     ))
+}
+
+fn open_log_file(app: &tauri::AppHandle, file_name: &str) -> Result<std::fs::File> {
+    let log_dir = native_log_dir(app)?;
+    fs::create_dir_all(&log_dir).with_context(|| format!("failed to create log dir {}", log_dir.display()))?;
+    let log_path = log_dir.join(file_name);
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("failed to open log file {}", log_path.display()))
+}
+
+fn native_log_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
+    Ok(app.path().app_data_dir().context("failed to resolve app data dir")?.join(LOG_DIR_NAME))
+}
+
+fn append_native_log(app: &tauri::AppHandle, message: &str) {
+    if let Ok(mut file) = open_log_file(app, NATIVE_LOG_FILE_NAME) {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+fn log_fallback_native_message(message: &str) {
+    let fallback_path = std::env::temp_dir().join("kppost-ui-native.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(fallback_path) {
+        let _ = writeln!(file, "{message}");
+    }
 }
 
 fn resource_search_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
