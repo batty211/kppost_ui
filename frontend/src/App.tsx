@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './App.css';
 
 // Components
@@ -23,6 +23,7 @@ import {
   exportCanvaBatch,
   importCanvaBatch,
   renameBatch,
+  updateBatchContent,
   uploadBatchImage,
 } from './lib/appApi';
 import { getErrorMessage } from './lib/errorMessage';
@@ -30,7 +31,6 @@ import { selectRawChild, selectRawSource } from './lib/prepareTarget';
 import type {
   ActionStatus,
   AppView,
-  BatchDetails,
   BatchWorkflowStatus,
   CommandLog,
   CommandRunState,
@@ -58,6 +58,8 @@ interface CommandSummary {
   title: string;
   lines: string[];
 }
+
+type RawEditorSaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 function extractJsonBlock(stdout: string): Record<string, unknown> | null {
   const start = stdout.indexOf('{');
@@ -131,6 +133,25 @@ function summarizeCommand(command: string, result: CommandLog): CommandSummary {
   };
 }
 
+function getRawEditorSavePresentation(
+  saveState: RawEditorSaveState,
+  isDirty: boolean,
+): { label: string; tone: 'muted' | 'saving' | 'success' | 'error' } {
+  if (saveState === 'error') {
+    return { label: 'Could not save', tone: 'error' };
+  }
+  if (saveState === 'saving') {
+    return { label: 'Saving...', tone: 'saving' };
+  }
+  if (isDirty) {
+    return { label: 'Changes pending', tone: 'muted' };
+  }
+  if (saveState === 'saved') {
+    return { label: 'Saved', tone: 'success' };
+  }
+  return { label: 'Auto-saves after you pause typing', tone: 'muted' };
+}
+
 function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedRawSourcePath, setSelectedRawSourcePath] = useState<string | null>(null);
@@ -172,6 +193,11 @@ function App() {
   // States for renaming
   const [isEditingName, setIsEditingName] = useState(false);
   const [editableName, setEditableName] = useState('');
+  const [rawDraftPath, setRawDraftPath] = useState<string | null>(null);
+  const [rawDraftContent, setRawDraftContent] = useState('');
+  const [rawLastSavedContent, setRawLastSavedContent] = useState('');
+  const [rawIsDirty, setRawIsDirty] = useState(false);
+  const [rawSaveState, setRawSaveState] = useState<RawEditorSaveState>('idle');
 
   // Preparation Preview states
   const [showPreviewConfirm, setShowPreviewConfirm] = useState<string | null>(null);
@@ -182,6 +208,20 @@ function App() {
     post: 'idle',
   });
   const [commandSummaries, setCommandSummaries] = useState<Partial<Record<string, CommandSummary>>>({});
+  const rawDraftRef = useRef(rawDraftContent);
+  const rawDraftPathRef = useRef(rawDraftPath);
+  const rawAutosaveTimerRef = useRef<number | null>(null);
+  const rawSaveAttemptRef = useRef(0);
+  const previousCliStatusRef = useRef(cliStatus.status);
+  const batchDetailsPath = typeof batchDetails?.path === 'string' ? batchDetails.path : null;
+
+  useEffect(() => {
+    rawDraftRef.current = rawDraftContent;
+  }, [rawDraftContent]);
+
+  useEffect(() => {
+    rawDraftPathRef.current = rawDraftPath;
+  }, [rawDraftPath]);
 
   useEffect(() => {
     if (batchDetails) {
@@ -192,6 +232,17 @@ function App() {
       setEditableName(workspaceNode.name);
     }
   }, [batchDetails, workspaceNode, rawSourceNode, selectedKind]);
+
+  useEffect(() => {
+    const previousStatus = previousCliStatusRef.current;
+    if (
+      ['installing', 'updating'].includes(previousStatus)
+      && cliStatus.status === 'ready'
+    ) {
+      void refreshConfig();
+    }
+    previousCliStatusRef.current = cliStatus.status;
+  }, [cliStatus.status, refreshConfig]);
 
   const resetWorkspaceSelection = () => {
     setSelectedPath(null);
@@ -212,6 +263,11 @@ function App() {
     setFeatureZip(null);
     setNewsWatermarkZip(null);
     setView('editor');
+    setRawDraftPath(null);
+    setRawDraftContent('');
+    setRawLastSavedContent('');
+    setRawIsDirty(false);
+    setRawSaveState('idle');
   };
 
   useEffect(() => {
@@ -235,6 +291,88 @@ function App() {
     });
     setCommandSummaries({});
   }, [selectedKind, selectedPath]);
+
+  useEffect(() => {
+    if (selectedKind !== 'raw' || !batchDetails || !batchDetailsPath) {
+      return;
+    }
+
+    if (rawDraftPath !== batchDetailsPath) {
+      setRawDraftPath(batchDetailsPath);
+      setRawDraftContent(batchDetails.content);
+      setRawLastSavedContent(batchDetails.content);
+      setRawIsDirty(false);
+      setRawSaveState('idle');
+      return;
+    }
+
+    if (!rawIsDirty && rawLastSavedContent !== batchDetails.content) {
+      setRawDraftContent(batchDetails.content);
+      setRawLastSavedContent(batchDetails.content);
+      setRawSaveState('idle');
+    }
+  }, [batchDetails, batchDetailsPath, rawDraftPath, rawIsDirty, rawLastSavedContent, selectedKind]);
+
+  useEffect(() => {
+    if (rawAutosaveTimerRef.current !== null) {
+      window.clearTimeout(rawAutosaveTimerRef.current);
+      rawAutosaveTimerRef.current = null;
+    }
+
+    if (
+      selectedKind !== 'raw'
+      || !rawDraftPath
+      || !rawIsDirty
+      || rawDraftContent === rawLastSavedContent
+    ) {
+      return;
+    }
+
+    rawAutosaveTimerRef.current = window.setTimeout(() => {
+      const path = rawDraftPathRef.current;
+      const content = rawDraftRef.current;
+      if (!path) {
+        return;
+      }
+
+      const attempt = rawSaveAttemptRef.current + 1;
+      rawSaveAttemptRef.current = attempt;
+      setRawSaveState('saving');
+
+      void updateBatchContent(path, content)
+        .then(() => {
+          if (rawSaveAttemptRef.current !== attempt) {
+            return;
+          }
+
+          setRawLastSavedContent(content);
+          const hasNewerDraft = rawDraftPathRef.current !== path || rawDraftRef.current !== content;
+          setRawIsDirty(hasNewerDraft);
+          setRawSaveState(hasNewerDraft ? 'idle' : 'saved');
+          setBatchDetails((current) => {
+            const currentPath = (current as (typeof current & { path?: string }) | null)?.path;
+            if (!current || currentPath !== path) {
+              return current;
+            }
+            return { ...current, content };
+          });
+        })
+        .catch(() => {
+          if (rawSaveAttemptRef.current !== attempt) {
+            return;
+          }
+          setRawSaveState('error');
+          setRawIsDirty(true);
+        });
+    }, 700);
+
+    return () => {
+      if (rawAutosaveTimerRef.current !== null) {
+        window.clearTimeout(rawAutosaveTimerRef.current);
+        rawAutosaveTimerRef.current = null;
+      }
+    };
+  }, [rawDraftContent, rawDraftPath, rawIsDirty, rawLastSavedContent, selectedKind, setBatchDetails]);
 
   const handleSelectRawPath = async (path: string) => {
     setView('editor');
@@ -467,20 +605,28 @@ function App() {
   };
 
   const handleContentChange = (content: string) => {
-    if (!batchDetails) return;
-    setBatchDetails({ ...(batchDetails as BatchDetails), content });
+    if (selectedKind !== 'raw' || !batchDetailsPath) return;
+    setRawDraftPath(batchDetailsPath);
+    setRawDraftContent(content);
+    setRawIsDirty(content !== rawLastSavedContent);
+    setRawSaveState('idle');
   };
 
   const handleUploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !selectedPath) return;
+    const input = e.target;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0 || !selectedPath) return;
     setIsLoading(true);
     try {
-      for (const file of Array.from(e.target.files)) {
+      for (const file of files) {
         await uploadBatchImage(selectedPath, file);
       }
       await refreshBatchDetails(selectedPath);
     } catch (err) { console.error(err); }
-    finally { setIsLoading(false); }
+    finally {
+      input.value = '';
+      setIsLoading(false);
+    }
   };
 
   const handleDeleteImage = async (imageName: string) => {
@@ -563,6 +709,14 @@ function App() {
     await refreshBatchDetails(path);
   };
 
+  const rawEditorContent = batchDetails
+    ? selectedKind === 'raw' && rawDraftPath === batchDetailsPath
+      ? rawDraftContent
+      : batchDetails.content
+    : '';
+  const rawEditorDetails = batchDetails ? { ...batchDetails, content: rawEditorContent } : null;
+  const rawSavePresentation = getRawEditorSavePresentation(rawSaveState, rawIsDirty);
+
   const mainContent = view === 'settings' ? (
     <SettingsView
       config={config}
@@ -593,7 +747,8 @@ function App() {
     <RawSourceWorkspaceView
       sourceNode={rawSourceNode}
       selectedPath={selectedPath}
-      editorDetails={batchDetails}
+      editorDetails={rawEditorDetails}
+      editorContent={rawEditorContent}
       onSelectChild={handleSelectRawChildPath}
       onNewPost={handleOpenNewPostModal}
       onPrepare={handlePrepareFromRawSource}
@@ -608,6 +763,8 @@ function App() {
       setEditableName={setEditableName}
       handleRename={handleRename}
       isLoading={isLoading}
+      saveStateLabel={rawSavePresentation.label}
+      saveStateTone={rawSavePresentation.tone}
     />
   ) : selectedKind === 'raw' ? (
     <RawSourceBrowser

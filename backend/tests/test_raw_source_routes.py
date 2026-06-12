@@ -104,10 +104,10 @@ class RawSourceRouteTests(unittest.TestCase):
             {"date": "2026-06-11", "time": "14:03", "department_code": "gen"},
         )
 
-        folder = self.raw_source / "2606111403-gen"
-        self.assertEqual(result["path"], "Raws/2026-news-1/2606111403-gen")
+        folder = self.raw_source / "260611-1403-gen"
+        self.assertEqual(result["path"], "Raws/2026-news-1/260611-1403-gen")
         self.assertTrue(folder.is_dir())
-        self.assertTrue((folder / "2606111403-gen.txt").is_file())
+        self.assertTrue((folder / "260611-1403-gen.txt").is_file())
 
     def test_create_raw_post_requires_workspace_departments(self) -> None:
         with self.assertRaises(HTTPException) as context:
@@ -124,7 +124,7 @@ class RawSourceRouteTests(unittest.TestCase):
             json.dumps({"departments": [{"code": "gen"}]}, ensure_ascii=False),
             encoding="utf-8",
         )
-        existing = self.raw_source / "2606111403-gen"
+        existing = self.raw_source / "260611-1403-gen"
         existing.mkdir(parents=True)
 
         with self.assertRaises(HTTPException) as context:
@@ -149,6 +149,29 @@ class RawSourceRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(context.exception.status_code, 400)
+
+    def test_update_batch_content_writes_raw_post_text_file(self) -> None:
+        post_dir = self.raw_source / "260611-1403-gen"
+        post_dir.mkdir(parents=True)
+        text_path = post_dir / "260611-1403-gen.txt"
+        text_path.write_text("old", encoding="utf-8")
+
+        result = main.update_batch_content(
+            "Raws/2026-news-1/260611-1403-gen",
+            main.UpdateBatchRequest(content="updated content"),
+        )
+
+        self.assertEqual(result, {"message": "Content updated"})
+        self.assertEqual(text_path.read_text(encoding="utf-8"), "updated content")
+
+    def test_update_batch_content_rejects_missing_folder(self) -> None:
+        with self.assertRaises(HTTPException) as context:
+            main.update_batch_content(
+                "Raws/2026-news-1/missing-post",
+                main.UpdateBatchRequest(content="updated content"),
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
 
 
 if __name__ == "__main__":

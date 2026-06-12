@@ -83,6 +83,10 @@ export async function deleteBatchImage(batchName: string, imageName: string) {
   await axios.delete(`${API_BASE}/batches/${batchName}/images/${imageName}`);
 }
 
+export async function updateBatchContent(workspacePath: string, content: string) {
+  await axios.put(`${API_BASE}/batches/${workspacePath}`, { content });
+}
+
 export async function exportCanvaBatch(batchPath: string): Promise<CommandLog> {
   const formData = new FormData();
   formData.append('batch_path', batchPath);

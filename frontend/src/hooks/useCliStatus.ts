@@ -20,6 +20,8 @@ const DEFAULT_CLI_STATUS: CliStatus = {
 export function useCliStatus() {
   const [cliStatus, setCliStatus] = useState<CliStatus>(DEFAULT_CLI_STATUS);
   const previousStatusRef = useRef(cliStatus.status);
+  const [pendingOperation, setPendingOperation] = useState<'installing' | 'updating' | null>(null);
+  const [pendingMessage, setPendingMessage] = useState('');
 
   const refreshCliStatus = async (forceRemote = false) => {
     try {
@@ -31,28 +33,28 @@ export function useCliStatus() {
 
   const installCli = async () => {
     try {
+      setPendingOperation('installing');
+      setPendingMessage('Starting CLI install...');
       const response = await startCliInstall();
-      setCliStatus((current) => ({
-        ...current,
-        status: 'installing',
-        message: response?.message ?? 'CLI install started',
-      }));
+      setPendingMessage(response?.message ?? 'CLI install started');
       void refreshCliStatus(true);
     } catch {
+      setPendingOperation(null);
+      setPendingMessage('');
       alert('Failed to start CLI install');
     }
   };
 
   const updateCli = async () => {
     try {
+      setPendingOperation('updating');
+      setPendingMessage('Starting CLI update...');
       const response = await startCliUpdate();
-      setCliStatus((current) => ({
-        ...current,
-        status: 'updating',
-        message: response?.message ?? 'CLI update started',
-      }));
+      setPendingMessage(response?.message ?? 'CLI update started');
       void refreshCliStatus(true);
     } catch {
+      setPendingOperation(null);
+      setPendingMessage('');
       alert('Failed to start CLI update');
     }
   };
@@ -62,7 +64,7 @@ export function useCliStatus() {
   }, []);
 
   useEffect(() => {
-    if (!['installing', 'updating'].includes(cliStatus.status)) {
+    if (!pendingOperation && !['installing', 'updating'].includes(cliStatus.status)) {
       return;
     }
 
@@ -71,7 +73,22 @@ export function useCliStatus() {
     }, 2000);
 
     return () => window.clearInterval(timer);
-  }, [cliStatus.status]);
+  }, [cliStatus.status, pendingOperation]);
+
+  useEffect(() => {
+    if (!pendingOperation) {
+      return;
+    }
+
+    if (
+      cliStatus.status === pendingOperation
+      || cliStatus.status === 'ready'
+      || cliStatus.status === 'error'
+    ) {
+      setPendingOperation(null);
+      setPendingMessage('');
+    }
+  }, [cliStatus.status, pendingOperation]);
 
   useEffect(() => {
     const previousStatus = previousStatusRef.current;
@@ -100,8 +117,17 @@ export function useCliStatus() {
     previousStatusRef.current = cliStatus.status;
   }, [cliStatus.status, cliStatus.message]);
 
+  const effectiveCliStatus =
+    pendingOperation && !['ready', 'error', pendingOperation].includes(cliStatus.status)
+      ? {
+          ...cliStatus,
+          status: pendingOperation,
+          message: pendingMessage || cliStatus.message || `CLI ${pendingOperation} started`,
+        }
+      : cliStatus;
+
   return {
-    cliStatus,
+    cliStatus: effectiveCliStatus,
     installCli,
     refreshCliStatus,
     updateCli,

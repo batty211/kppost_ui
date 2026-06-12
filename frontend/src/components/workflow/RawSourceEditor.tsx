@@ -22,6 +22,7 @@ import type { BatchDetails, ImageItem, WorkspaceNode } from '../../types/app';
 
 interface RawSourceEditorProps {
   batchDetails: BatchDetails;
+  content: string;
   handleContentChange: (content: string) => void;
   handleUploadImages: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleDeleteImage: (imageName: string) => Promise<void>;
@@ -32,10 +33,13 @@ interface RawSourceEditorProps {
   editableName: string;
   setEditableName: (value: string) => void;
   handleRename: () => Promise<void>;
+  saveStateLabel: string;
+  saveStateTone: 'muted' | 'saving' | 'success' | 'error';
 }
 
 export function RawSourceEditor({
   batchDetails,
+  content,
   handleContentChange,
   handleUploadImages,
   handleDeleteImage,
@@ -46,6 +50,8 @@ export function RawSourceEditor({
   editableName,
   setEditableName,
   handleRename,
+  saveStateLabel,
+  saveStateTone,
 }: RawSourceEditorProps) {
   const [orderedImages, setOrderedImages] = useState<ImageItem[]>(batchDetails.images);
   const batchPath = (batchDetails as BatchDetails & { path?: string }).path ?? batchDetails.name;
@@ -113,10 +119,23 @@ export function RawSourceEditor({
             <h3 className="text-sm font-bold flex items-center gap-2 text-gray-300">
               <FileText size={16} /> Post Content
             </h3>
-            <div className="text-[10px] text-gray-500">Auto-saves as you type</div>
+            <div
+              className={[
+                'text-[10px]',
+                saveStateTone === 'error'
+                  ? 'text-red-400'
+                  : saveStateTone === 'success'
+                    ? 'text-emerald-400'
+                    : saveStateTone === 'saving'
+                      ? 'text-blue-400'
+                      : 'text-gray-500',
+              ].join(' ')}
+            >
+              {saveStateLabel}
+            </div>
           </div>
           <textarea
-            value={batchDetails.content}
+            value={content}
             onChange={(e) => handleContentChange(e.target.value)}
             className="w-full h-[500px] bg-gray-900 border border-gray-800 rounded-xl p-6 focus:ring-2 focus:ring-blue-600 focus:outline-none resize-none font-sans leading-relaxed text-gray-200 shadow-inner"
             placeholder="Enter your post content here..."

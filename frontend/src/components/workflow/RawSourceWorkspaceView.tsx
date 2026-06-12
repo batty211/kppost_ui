@@ -9,6 +9,7 @@ interface RawSourceWorkspaceViewProps {
   sourceNode: WorkspaceNode | null;
   selectedPath: string | null;
   editorDetails: BatchDetails | null;
+  editorContent: string;
   onSelectChild: (path: string) => void;
   onNewPost: () => void;
   onPrepare: () => void;
@@ -23,12 +24,15 @@ interface RawSourceWorkspaceViewProps {
   setEditableName: (value: string) => void;
   handleRename: () => Promise<void>;
   isLoading: boolean;
+  saveStateLabel: string;
+  saveStateTone: 'muted' | 'saving' | 'success' | 'error';
 }
 
 export function RawSourceWorkspaceView({
   sourceNode,
   selectedPath,
   editorDetails,
+  editorContent,
   onSelectChild,
   onNewPost,
   onPrepare,
@@ -43,6 +47,8 @@ export function RawSourceWorkspaceView({
   setEditableName,
   handleRename,
   isLoading,
+  saveStateLabel,
+  saveStateTone,
 }: RawSourceWorkspaceViewProps) {
   const breadcrumb = sourceNode?.path.split('/').filter(Boolean) ?? [];
 
@@ -104,6 +110,7 @@ export function RawSourceWorkspaceView({
           {editorDetails ? (
             <RawSourceEditor
               batchDetails={editorDetails}
+              content={editorContent}
               handleContentChange={handleContentChange}
               handleUploadImages={handleUploadImages}
               handleDeleteImage={handleDeleteImage}
@@ -114,6 +121,8 @@ export function RawSourceWorkspaceView({
               editableName={editableName}
               setEditableName={setEditableName}
               handleRename={handleRename}
+              saveStateLabel={saveStateLabel}
+              saveStateTone={saveStateTone}
             />
           ) : (
             <div className="flex min-h-[720px] items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-black/10 p-8 text-center text-sm text-gray-500">

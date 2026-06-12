@@ -495,7 +495,7 @@ def _raw_department_item(department_code: str) -> dict[str, object]:
 def _raw_post_folder_name(raw_date: str, raw_time: str, department_code: str) -> str:
     compact_date = raw_date.replace("-", "")
     compact_time = raw_time.replace(":", "")
-    return f"{compact_date[2:]}{compact_time}-{department_code}"
+    return f"{compact_date[2:]}-{compact_time}-{department_code}"
 
 
 def _workspace_zone_payload(root: Path, zone_name: str) -> dict[str, object]:
